@@ -33,12 +33,11 @@ custom-shader-animation = true
 # Window
 window-save-state = always
 confirm-close-surface = false
-window-padding-x = 14
-window-padding-y = 10
+window-padding-x = 12
+window-padding-y = 12
 window-padding-balance = true
-# absorb leftover space evenly (padding-x/y are asymmetric)
-# Breathing room so text doesn't kiss the window edge. Middle of the range floated
-# in the mockups (polish 10x8 · refresh 14x10 · bold 22x16) — bump for more air.
+# balance=true splits the non-divisible grid leftover evenly, so left/right
+# (and top/bottom) stay even. x == y == 12 → equal inset on all four sides.
 # Dim inactive splits so focus lands on the active pane.
 unfocused-split-opacity = 0.85
 # Keyboard / macOS
