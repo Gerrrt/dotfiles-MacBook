@@ -11,7 +11,7 @@ if [ -z "${AVAIL:-}" ]; then
 fi
 
 if [ "${USEDPCT:-0}" -lt 80 ]; then
-  COLOR="$FG"
+  COLOR="$GREEN"
 elif [ "${USEDPCT:-0}" -lt 90 ]; then
   COLOR="$YELLOW"
 else

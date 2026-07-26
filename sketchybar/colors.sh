@@ -13,5 +13,6 @@ export YELLOW=0xffe0af68
 export RED=0xfff7768e
 export MAGENTA=0xffbb9af7
 export CYAN=0xff7dcfff
+export ORANGE=0xffff9e64 # tokyonight orange — weather + warm accents
 export GREY=0xff565f89 # comment grey — inactive / dim
 export TRANSPARENT=0x00000000

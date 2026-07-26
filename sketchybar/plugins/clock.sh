@@ -7,5 +7,5 @@
 source "$HOME/.config/sketchybar/colors.sh"
 
 # %a=abbrev weekday, %-d=day (no pad), %b=abbrev month, %-l:%M=12h time (no pad), %p=AM/PM.
-sketchybar --set "$NAME" icon="󰅐" icon.color="$ACCENT" \
-  label="$(date '+%a %-d %b %-l:%M %p')" label.color="$FG"
+sketchybar --set "$NAME" icon="󰅐" icon.color="$MAGENTA" \
+  label="$(date '+%a %-d %b %-l:%M %p')" label.color="$MAGENTA"

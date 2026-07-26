@@ -11,6 +11,12 @@
 #   Layout:  logo · workspaces · front_app · pomodoro | clock | network · volume · disk ·
 #            memory · cpu · battery · weather · ☕caffeinate · power
 #   caffeinate is macOS-only (no Zebar twin); Zebar's binding-mode is Windows-only.
+#
+# ⚠ DELIBERATE PARITY DIVERGENCE (macOS-only, 2026-07): this bar now renders as three floating
+#   "islands" (transparent bar + bracket backgrounds) instead of the chip-less flat design that
+#   PARITY.md still describes. Zebar has NOT been changed, so the two hosts currently differ on
+#   purpose. To reconcile later: either port islands to Zebar and update both PARITY.md files, or
+#   revert the bar color/blur (below) and delete the island brackets near the end of this file.
 # ================================================================================================
 
 CONFIG_DIR="$HOME/.config/sketchybar"
@@ -26,11 +32,14 @@ sketchybar --bar \
   position=top \
   padding_left=2 \
   padding_right=2 \
-  color="$BAR_COLOR" \
+  color="$TRANSPARENT" \
   corner_radius=9 \
   y_offset=4 \
   margin=8 \
-  blur_radius=20
+  blur_radius=0
+# ↑ transparent bar + blur off: the three bracket "islands" below now carry the
+#   background, so each group floats as its own rounded panel (was: one full-width
+#   bar, color=$BAR_COLOR blur_radius=20 — revert those two to restore the flat bar).
 
 # ── Defaults shared by every item ───────────────────────────────────────────────────────────
 # Chip-less: items sit as plain spaced icon+text on the translucent bar (no per-item background),
@@ -77,13 +86,9 @@ for sid in 1 2 3 4 5; do
     --subscribe "space.$sid" aerospace_workspace_change
 done
 
-# Group the workspace numbers inside a single rounded container.
-sketchybar --add bracket spaces '/space\..*/' \
-  --set spaces \
-  background.drawing=on \
-  background.color="$BG" \
-  background.corner_radius=8 \
-  background.height=26
+# (Workspaces used to get their own `spaces` bracket here; they're now wrapped by the
+# left_island bracket near the end of this file, so a separate bracket would double the
+# background. The focused-space blue pill from aerospace.sh still draws over the island.)
 
 # ── Left: front app name ────────────────────────────────────────────────────────────────────
 sketchybar --add item front_app left \
@@ -146,7 +151,8 @@ sketchybar --add item power.shutdown popup.power \
 
 # Keep-awake toggle (macOS-only; no Zebar twin): click the cup to block display + idle system
 # sleep, click again to release. A free Amphetamine — see plugins/caffeinate.sh.
-sketchybar --add item caffeinate right \
+# ⚠ Moved to the LEFT island (beside pomodoro) to rebalance the bar — another macOS divergence.
+sketchybar --add item caffeinate left \
   --set caffeinate \
   label.drawing=off \
   update_freq=30 \
@@ -154,7 +160,9 @@ sketchybar --add item caffeinate right \
   script="$PLUGIN_DIR/caffeinate.sh"
 
 # Current conditions — temp °C + day/night weather glyph (twin of Zebar's weather widget).
-sketchybar --add item weather right \
+# ⚠ Moved to the LEFT island so the volatile network readout on the right keeps clear of the
+#   centered clock (weather is stable-width + non-urgent; keeps it visible — another divergence).
+sketchybar --add item weather left \
   --set weather \
   update_freq=1800 \
   script="$PLUGIN_DIR/weather.sh"
@@ -165,6 +173,11 @@ sketchybar --add item battery right \
   --set battery \
   update_freq=120 \
   script="$PLUGIN_DIR/battery.sh"
+
+# ── Group separator: load ↔ power/ambient (thin grey divider for readability) ──────────────────
+sketchybar --add item sep.load right \
+  --set sep.load icon="│" icon.color="$GREY" icon.font="$FONT:Regular:16.0" \
+  label.drawing=off padding_left=6 padding_right=6
 
 # CPU load, colored green→yellow→red. Dependency-free (reads macOS `top`).
 sketchybar --add item cpu right \
@@ -185,6 +198,11 @@ sketchybar --add item disk right \
   update_freq=60 \
   script="$PLUGIN_DIR/disk.sh"
 
+# ── Group separator: I/O ↔ load (thin grey divider for readability) ───────────────────────────
+sketchybar --add item sep.io right \
+  --set sep.io icon="│" icon.color="$GREY" icon.font="$FONT:Regular:16.0" \
+  label.drawing=off padding_left=6 padding_right=6
+
 # Output volume; cyan to match @tn_cyan.
 sketchybar --add item volume right \
   --set volume \
@@ -196,6 +214,33 @@ sketchybar --add item network right \
   --set network \
   update_freq=3 \
   script="$PLUGIN_DIR/network.sh"
+
+# ── Islands (⚠ macOS divergence from Zebar; see header) ───────────────────────────────────────
+# Three floating panels: with the bar itself transparent, each bracket's translucent background
+# reads as a discrete rounded island, and the transparent bar between the left/center/right groups
+# becomes the gap. Brackets are added here, after every member item exists. The focused-workspace
+# blue pill (aerospace.sh sets background on space.N) draws OVER the left island → S1 preserved.
+# Shared island fill; each island gets its OWN thick accent border below — JankyBorders-style,
+# echoing the 0xff7aa2f7 window borders aerospace launches (see aerospace.toml). Bump
+# border_width for an even chunkier rim.
+ISLAND_ARGS=(background.drawing=on
+  background.color="$BAR_COLOR"
+  background.corner_radius=9
+  background.height=28
+  background.border_width=2)
+
+# Left island: brand · workspaces · front app · pomodoro · caffeinate · weather — blue rim
+sketchybar --add bracket left_island logo '/space\..*/' front_app pomodoro caffeinate weather \
+           --set left_island "${ISLAND_ARGS[@]}" background.border_color="$ACCENT"
+
+# Center island: clock on its own → the emphasis pill (S2) — magenta rim
+sketchybar --add bracket center_island clock \
+           --set center_island "${ISLAND_ARGS[@]}" background.border_color="$MAGENTA"
+
+# Right island: the system cluster grouped as one panel (S3) — green rim.
+# Two thin separators chunk it into I/O · load · power so the items don't blur together.
+sketchybar --add bracket right_island network volume sep.io disk memory cpu sep.load battery power \
+           --set right_island "${ISLAND_ARGS[@]}" background.border_color="$GREEN"
 
 # ── Finalize ────────────────────────────────────────────────────────────────────────────────
 sketchybar --update

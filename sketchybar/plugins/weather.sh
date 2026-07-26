@@ -36,4 +36,4 @@ case "$COND" in
 *) [ "$DAY" -eq 1 ] && ICON="$(printf '\356\214\215')" || ICON="$(printf '\356\214\253')" ;; # clear/sunny
 esac
 
-sketchybar --set "$NAME" drawing=on icon="$ICON" icon.color="$ACCENT" label="${TEMP}°C" label.color="$FG"
+sketchybar --set "$NAME" drawing=on icon="$ICON" icon.color="$ORANGE" label="${TEMP}°C" label.color="$ORANGE"
