@@ -37,7 +37,19 @@
   // — the leaked-template-tag class of bug. Keep this list tight.
   "MD033": {
     "allowed_elements": [
-      "a", "br", "details", "div", "h3", "img", "li", "nobr", "ol", "p", "strong", "summary", "ul"
-    ]
+      "a",
+      "br",
+      "details",
+      "div",
+      "h3",
+      "img",
+      "li",
+      "nobr",
+      "ol",
+      "p",
+      "strong",
+      "summary",
+      "ul",
+    ],
   },
 }
