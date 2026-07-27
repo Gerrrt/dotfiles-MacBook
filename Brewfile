@@ -68,6 +68,7 @@ brew "xh"            # HTTP client  (zsh aliases http/https → xh)
 brew "doggo"         # DNS client   (zsh alias dns → doggo)
 brew "gping"         # ping w/ graph (core alias ping → gping; 00-tools.zsh probes HAVE_GPING)
 brew "croc"          # secure P2P file transfer — `croc send <file>` / `croc <code>` (e2e encrypted; own command)
+brew "w3m"           # terminal web browser (Core: `web` alias; text-mode reader)
 
 # ── File management ────────────────────────────────────────────────────────────
 brew "yazi"
