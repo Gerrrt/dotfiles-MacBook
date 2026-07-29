@@ -231,16 +231,16 @@ ISLAND_ARGS=(background.drawing=on
 
 # Left island: brand · workspaces · front app · pomodoro · caffeinate · weather — blue rim
 sketchybar --add bracket left_island logo '/space\..*/' front_app pomodoro caffeinate weather \
-           --set left_island "${ISLAND_ARGS[@]}" background.border_color="$ACCENT"
+  --set left_island "${ISLAND_ARGS[@]}" background.border_color="$ACCENT"
 
 # Center island: clock on its own → the emphasis pill (S2) — magenta rim
 sketchybar --add bracket center_island clock \
-           --set center_island "${ISLAND_ARGS[@]}" background.border_color="$MAGENTA"
+  --set center_island "${ISLAND_ARGS[@]}" background.border_color="$MAGENTA"
 
 # Right island: the system cluster grouped as one panel (S3) — green rim.
 # Two thin separators chunk it into I/O · load · power so the items don't blur together.
 sketchybar --add bracket right_island network volume sep.io disk memory cpu sep.load battery power \
-           --set right_island "${ISLAND_ARGS[@]}" background.border_color="$GREEN"
+  --set right_island "${ISLAND_ARGS[@]}" background.border_color="$GREEN"
 
 # ── Finalize ────────────────────────────────────────────────────────────────────────────────
 sketchybar --update
