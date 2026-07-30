@@ -55,9 +55,11 @@ brew "btop"          # top  (core aliases top/htop → btop expect this binary)
 brew "procs"         # ps
 brew "viddy"         # watch (core aliases watch → viddy; 00-tools.zsh probes HAVE_VIDDY)
 brew "sd"            # sed
+brew "ast-grep"      # AST-aware structural search/rewrite — the syntax-tree complement to rg(text)/sd(regex)/gron(JSON); own command (00-tools.zsh probes HAVE_ASTGREP)
 brew "jq"            # JSON
 brew "yq"            # YAML
 brew "gron"          # greppable JSON (zsh helper expects it)
+brew "jnv"           # interactive JSON explorer (jq-filter editor + collapsible viewer) — the "explore" verb to jq's "transform"; own command (00-tools.zsh probes HAVE_JNV)
 brew "xan"           # fast CSV slicing (maintained successor to the archived xsv)
 brew "visidata"      # interactive TUI for CSV/JSON/sqlite/parquet — the exploration complement to xan's slicing (`vd <file>`; own command)
 brew "gnu-sed"       # GNU sed (`gsed`) — nvim-spectre + scripts expect it
@@ -72,6 +74,7 @@ brew "w3m"           # terminal web browser (Core: `web` alias; text-mode reader
 
 # ── File management ────────────────────────────────────────────────────────────
 brew "yazi"
+brew "ouch"          # one-binary archive (un)packer — Core's extract() prefers it (30-functions.zsh probes HAVE_OUCH)
 brew "trash"         # rm → Trash  (macOS; safer than rm; macos.zsh aliases rm → trash)
 
 # ── Editor & multiplexer ───────────────────────────────────────────────────────
@@ -86,6 +89,8 @@ brew "git-lfs"
 brew "lazygit"
 brew "gh"            # GitHub CLI
 brew "git-absorb"    # smart commit absorb
+brew "difftastic"    # structural/AST diff — OPT-IN companion to delta, wired as `git dft` / `gdft` (never the default pager); binary is `difft` (00-tools.zsh probes HAVE_DIFFT)
+brew "jj"            # jujutsu — OPT-IN colocated git companion (jjs/jjl/jjd aliases; config synced from Core's jujutsu/config.toml; 00-tools.zsh probes HAVE_JJ)
 brew "onefetch"      # git repo summary (language/churn/contributors) — `onefetch` in a repo; own command
 brew "gnupg"         # commit signing
 brew "pinentry-mac"  # GUI pinentry for gpg on macOS
@@ -100,6 +105,7 @@ brew "pre-commit"    # local commit-time lint gate — run `pre-commit install` 
 brew "actionlint"    # GitHub Actions workflow linter
 brew "luacheck"      # Lua linter (core/nvim — uses core/nvim/.luacheckrc)
 brew "stylua"        # Lua formatter (core/nvim)
+brew "hyperfine"     # command-line benchmarking (Core's 00-tools.zsh perf note + bench-core.sh use it; own command, probes HAVE_HYPERFINE)
 
 # ── Productivity ──────────────────────────────────────────────────────────────
 brew "fzf"
