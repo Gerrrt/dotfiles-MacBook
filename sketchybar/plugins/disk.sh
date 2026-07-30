@@ -10,8 +10,10 @@ if [ -z "${AVAIL:-}" ]; then
   exit 0
 fi
 
+# Disk stays neutral (fg) until it runs low — unlike cpu/memory it is NOT green when
+# healthy (PARITY.md threshold table: disk <80% used = fg; Zebar uses c-fg to match).
 if [ "${USEDPCT:-0}" -lt 80 ]; then
-  COLOR="$GREEN"
+  COLOR="$FG"
 elif [ "${USEDPCT:-0}" -lt 90 ]; then
   COLOR="$YELLOW"
 else
