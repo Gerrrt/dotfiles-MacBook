@@ -8,15 +8,13 @@
 # This bar is kept at design parity with the Windows/GlazeWM host's Zebar bar
 # (dotfiles-Windows/desktop/zebar). The shared contract — layout order, geometry, palette,
 # thresholds and glyphs — lives in PARITY.md next to this file; change both bars together.
-#   Layout:  logo · workspaces · front_app · pomodoro | clock | network · volume · disk ·
-#            memory · cpu · battery · weather · ☕caffeinate · power
-#   caffeinate is macOS-only (no Zebar twin); Zebar's binding-mode is Windows-only.
 #
-# ⚠ DELIBERATE PARITY DIVERGENCE (macOS-only, 2026-07): this bar now renders as three floating
-#   "islands" (transparent bar + bracket backgrounds) instead of the chip-less flat design that
-#   PARITY.md still describes. Zebar has NOT been changed, so the two hosts currently differ on
-#   purpose. To reconcile later: either port islands to Zebar and update both PARITY.md files, or
-#   revert the bar color/blur (below) and delete the island brackets near the end of this file.
+# Renders as three floating "islands": the bar itself is transparent and each zone is a rounded
+# panel with a colored rim (left blue · center magenta · right green) — see the brackets near the
+# end of this file. Zebar mirrors this design (2026-07 reconciliation); PARITY.md is canonical.
+#   Layout:  [ logo · workspaces · front_app · pomodoro · ☕caffeinate · weather ]  [ clock ]
+#            [ network · volume ·│· disk · memory · cpu ·│· battery · power ]
+#   caffeinate is macOS-only (no Zebar twin); Zebar's binding-mode is Windows-only.
 # ================================================================================================
 
 CONFIG_DIR="$HOME/.config/sketchybar"
@@ -151,7 +149,7 @@ sketchybar --add item power.shutdown popup.power \
 
 # Keep-awake toggle (macOS-only; no Zebar twin): click the cup to block display + idle system
 # sleep, click again to release. A free Amphetamine — see plugins/caffeinate.sh.
-# ⚠ Moved to the LEFT island (beside pomodoro) to rebalance the bar — another macOS divergence.
+# In the LEFT island (beside pomodoro) to rebalance the bar (PARITY.md; Zebar has no caffeinate).
 sketchybar --add item caffeinate left \
   --set caffeinate \
   label.drawing=off \
@@ -160,8 +158,8 @@ sketchybar --add item caffeinate left \
   script="$PLUGIN_DIR/caffeinate.sh"
 
 # Current conditions — temp °C + day/night weather glyph (twin of Zebar's weather widget).
-# ⚠ Moved to the LEFT island so the volatile network readout on the right keeps clear of the
-#   centered clock (weather is stable-width + non-urgent; keeps it visible — another divergence).
+# In the LEFT island so the volatile network readout on the right keeps clear of the centered
+#   clock (weather is stable-width + non-urgent; keeps it visible). Zebar places it identically.
 sketchybar --add item weather left \
   --set weather \
   update_freq=1800 \
@@ -215,7 +213,7 @@ sketchybar --add item network right \
   update_freq=3 \
   script="$PLUGIN_DIR/network.sh"
 
-# ── Islands (⚠ macOS divergence from Zebar; see header) ───────────────────────────────────────
+# ── Islands (transparent bar + bracket backgrounds; Zebar mirrors this — see PARITY.md) ───────
 # Three floating panels: with the bar itself transparent, each bracket's translucent background
 # reads as a discrete rounded island, and the transparent bar between the left/center/right groups
 # becomes the gap. Brackets are added here, after every member item exists. The focused-workspace
