@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Current conditions — temperature in °C + a day/night weather glyph, mirroring Zebar's weather
+# Current conditions — temperature in °F + a day/night weather glyph, mirroring Zebar's weather
 # provider + getWeatherIcon map (clear / cloudy / light-rain / heavy-rain / snow / thunder, each
 # with a day and night variant). Location is auto-detected by IP via wttr.in. Dependency-free
 # (`curl`, built into macOS). Glyphs are emitted as UTF-8 octal escapes so they render under the
@@ -7,14 +7,15 @@
 # shellcheck source=/dev/null
 source "$HOME/.config/sketchybar/colors.sh"
 
-# "+18°C|Partly cloudy" — temperature then condition text (metric).
-RESP="$(curl -sf --max-time 10 'https://wttr.in/?format=%t|%C' 2>/dev/null)"
+# "+64°F|Partly cloudy" — temperature then condition text. `&u` forces USCS (Fahrenheit)
+# so %t returns °F, matching Zebar's fahrenheitTemp.
+RESP="$(curl -sf --max-time 10 'https://wttr.in/?format=%t|%C&u' 2>/dev/null)"
 if [ -z "$RESP" ]; then
   sketchybar --set "$NAME" drawing=off
   exit 0
 fi
 
-TEMP="$(printf '%s' "$RESP" | cut -d'|' -f1 | tr -d '+°C ')"
+TEMP="$(printf '%s' "$RESP" | cut -d'|' -f1 | tr -d '+°F ')"
 COND="$(printf '%s' "$RESP" | cut -d'|' -f2 | tr '[:upper:]' '[:lower:]')"
 [ -z "$TEMP" ] && {
   sketchybar --set "$NAME" drawing=off
@@ -36,4 +37,4 @@ case "$COND" in
 *) [ "$DAY" -eq 1 ] && ICON="$(printf '\356\214\215')" || ICON="$(printf '\356\214\253')" ;; # clear/sunny
 esac
 
-sketchybar --set "$NAME" drawing=on icon="$ICON" icon.color="$ORANGE" label="${TEMP}°C" label.color="$ORANGE"
+sketchybar --set "$NAME" drawing=on icon="$ICON" icon.color="$ORANGE" label="${TEMP}°F" label.color="$ORANGE"
