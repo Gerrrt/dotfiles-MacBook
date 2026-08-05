@@ -814,7 +814,8 @@ optionally applies defaults and sets the login shell. Fail-closed flag parser
 `make test-all` (this repo's behavioral tests + the vendored Core harness), `make
 bootstrap` / `bootstrap-dry` / `doctor`, `make bench` (Core shell-startup cost, gated
 by `CORE_BENCH_BUDGET_MS`), `make brew-check` (Brewfile reproducibility gate), and the
-Core-integrity trio `core-audit` / `verify-core` / `check-core-freshness`. Shell
+Core-integrity pair `core-audit` / `verify-core` (the third, `check-core-freshness`,
+retired with the per-repo watcher — Core's `fleet-drift` sweep answers that now). Shell
 completion for `bootstrap.sh` ships in `completions/` (`_bootstrap` + `bootstrap.bash`).
 
 ---

@@ -26,7 +26,7 @@ ZSH_FILES := zsh/zshenv zsh/zprofile zsh/zshrc os/macos.zsh
 
 .PHONY: help lint fmt fmt-check shellcheck syntax zsh-syntax check core-advisory \
         tools test test-repo test-all bench bootstrap bootstrap-dry doctor sync-core \
-        core-audit verify-core check-core-freshness core-lock brew-check
+        core-audit verify-core core-lock brew-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -61,9 +61,6 @@ core-audit: ## Gate the vendored Core subtree with its OWN audit (manifest/exec-
 
 verify-core: ## Assert vendored core/ is byte-for-byte upstream @ the recorded subtree-split (catches hand-edits + orphans the dir-level manifest misses)
 	@./test/verify-core.sh
-
-check-core-freshness: ## Is the vendored core/ behind upstream? (the nudge to run sync-core)
-	@./test/check-core-freshness.sh
 
 core-lock: ## Regenerate core.lock from the vendored subtree-split (after a MANUAL subtree pull; CORE_BRANCH overrides the recorded branch; sync-core writes it automatically)
 	@split="$$(git log --grep='git-subtree-dir: core' -n1 --format='%b' 2>/dev/null \
@@ -102,10 +99,15 @@ doctor: ## Show what bootstrap would change + verify the lint toolchain
 	@./bootstrap.sh --links-only --dry-run || true
 	@$(MAKE) -s tools || true
 
-sync-core: ## Reminder: pull the latest vendored Core subtree, then relink
-	@echo "  git subtree pull --prefix=core <remote>/dotfiles-core main --squash"
-	@echo "  ./bootstrap.sh --links-only   # re-wire any new/changed Core files"
-	@echo "  make test                     # prove the new Core still loads"
+sync-core: ## Reminder: how the vendored Core subtree gets updated
+	@echo "  Normally nothing to run: a dotfiles-core release opens a sync PR here"
+	@echo "  automatically (sync-fanout.yml). Merge it, then:"
+	@echo "    ./bootstrap.sh --links-only   # re-wire any new/changed Core files"
+	@echo "    make test                     # prove the new Core still loads"
+	@echo "  By hand, take the RELEASED tag (never main) and regenerate the lock,"
+	@echo "  or core-integrity reports the fresh subtree as TAMPERED:"
+	@echo "    git subtree pull --prefix=core <remote>/dotfiles-core refs/tags/v4 --squash"
+	@echo "    make core-lock                # sync-core.sh does this for you upstream"
 
 check: lint ## Alias for `lint`
 
