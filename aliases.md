@@ -27,6 +27,7 @@ See `core/` for the full Core alias reference (modern CLI, git, safety nets).
 | `masup` | `mas upgrade` (upgrade all App Store apps) | `mas` |
 | `masls` | `mas list` (list installed App Store apps) | `mas` |
 | `opsignin` | `eval "$(op signin)"` | `op` |
+| `ff` | `fastfetch` (system/host banner) | `fastfetch` |
 
 ## Desktop Tooling
 
