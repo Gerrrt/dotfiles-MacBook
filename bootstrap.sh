@@ -342,13 +342,35 @@ spin() {
 #
 # Idempotent and safe to call twice: `typeset -U`-style dedup isn't available in bash, but
 # `brew shellenv` emits absolute assignments, so the second call just rewrites the same
-# values. A no-op when neither prefix is present.
+# values.
+#
+# CAPTURE-then-CHECK-then-eval, never `eval "$(brew shellenv)"` directly: a non-zero
+# shellenv (corrupt install, unreadable prefix, a brew whose Ruby is broken) expands to an
+# EMPTY string, and `eval ""` exits 0 — so `set -e` never fires and PATH is silently never
+# set. That is the identical failure shape this commit series removes from the Homebrew
+# installer one-liner, and it matters MORE here now that the early call is the only thing
+# putting brew on PATH in --links-only mode.
+#
+# Returns non-zero (after saying so) when a brew binary exists but shellenv fails, so a
+# caller that genuinely needs brew can escalate. Not fatal on its own — the symlink-only
+# modes work fine without Homebrew, so a broken brew must not stop them. A box with no
+# Homebrew at all is NOT an error: that's a fresh machine, and provision() installs it.
 brew_shellenv() {
-  if [[ -x /opt/homebrew/bin/brew ]]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-  elif [[ -x /usr/local/bin/brew ]]; then
-    eval "$(/usr/local/bin/brew shellenv)"
-  fi
+  local brew out
+  for brew in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    [[ -x "$brew" ]] || continue
+    if ! out="$("$brew" shellenv)"; then
+      err "$brew shellenv failed — Homebrew tools will not be on PATH"
+      return 1
+    fi
+    if [[ -z "$out" ]]; then
+      err "$brew shellenv produced no output — Homebrew tools will not be on PATH"
+      return 1
+    fi
+    eval "$out"
+    return 0
+  done
+  return 0 # no Homebrew on this box (yet) — normal on a fresh machine
 }
 
 [[ "$(uname -s)" == "Darwin" || -n "${BOOTSTRAP_ALLOW_NON_DARWIN:-}" ]] || {
@@ -367,7 +389,12 @@ brew_shellenv() {
 # Homebrew on PATH for EVERY mode (see brew_shellenv above) — not just the provisioning
 # path, so --links-only can still find mise/nvim/tmux. A no-op on a box without Homebrew;
 # provision() calls it again after a fresh install.
-brew_shellenv
+#
+# `|| true` is deliberate: brew_shellenv reports a BROKEN brew and returns non-zero, which
+# under `set -e` would otherwise abort the whole run here — before the guards have even
+# decided whether this mode needs Homebrew at all. Symlink-only runs must survive a broken
+# brew; the run that actually needs it (provision, below) escalates on its own.
+brew_shellenv || true
 
 ((DRY)) && say "DRY RUN — no changes will be made; printing the plan only"
 
@@ -474,9 +501,22 @@ provision() {
     rm -f "$installer"
   fi
   # brew now exists (or never will) — re-run the PATH setup, since the unconditional call
-  # near the top ran before this install.
-  brew_shellenv
+  # near the top ran before this install. Same `|| true` reasoning as there: brew_shellenv
+  # has already SAID what went wrong, and the guard just below turns that into a clean exit
+  # with a remedy rather than letting `brew bundle` die at 127 with no explanation.
+  brew_shellenv || true
   if ((!NO_BREW)) && [[ -f "$REPO/Brewfile" ]]; then
+    # Escalate here, where Homebrew is genuinely required. Without this, a brew that exists
+    # but whose shellenv failed reaches `brew bundle` as a bare `brew: command not found`
+    # (exit 127) — the same misleading death this commit series removes from the installer
+    # path, just one step later.
+    if ! command -v brew >/dev/null 2>&1; then
+      err "Homebrew is not on PATH — cannot run brew bundle"
+      info "see the shellenv error above; or put it on PATH by hand and re-run:"
+      # shellcheck disable=SC2016  # a command for the USER to paste — must NOT expand here
+      info '  eval "$(/opt/homebrew/bin/brew shellenv)"   # Intel: /usr/local/bin/brew'
+      exit 1
+    fi
     # B13: skip the expensive resolve+install when the Brewfile is already satisfied.
     # `brew bundle check` is a fast read-only "is everything here installed?" probe, so a
     # re-run on a provisioned box no longer pays for a full `brew bundle` pass.
