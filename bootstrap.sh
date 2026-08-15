@@ -329,6 +329,28 @@ spin() {
   return "$rc"
 }
 
+# brew_shellenv — put Homebrew on PATH for the rest of this run (Apple Silicon first, then
+# Intel). Factored out of provision() because it is needed in TWO places:
+#
+#   1. UNCONDITIONALLY, right after the guards below — provision() is the only thing that
+#      used to run it, and --links-only skips provision() entirely. From a fresh /bin/bash
+#      (the first Terminal on a new machine, or CI) /opt/homebrew/bin isn't on PATH yet, so
+#      `command -v mise` further down failed and the whole `mise install` step silently
+#      no-op'd with no message — a green "bootstrap complete" and no runtimes.
+#   2. Again inside provision() after a FRESH Homebrew install, when call (1) ran before
+#      brew existed and therefore found nothing.
+#
+# Idempotent and safe to call twice: `typeset -U`-style dedup isn't available in bash, but
+# `brew shellenv` emits absolute assignments, so the second call just rewrites the same
+# values. A no-op when neither prefix is present.
+brew_shellenv() {
+  if [[ -x /opt/homebrew/bin/brew ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [[ -x /usr/local/bin/brew ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
+}
+
 [[ "$(uname -s)" == "Darwin" || -n "${BOOTSTRAP_ALLOW_NON_DARWIN:-}" ]] || {
   err "this bootstrap is macOS-only"
   info "set BOOTSTRAP_ALLOW_NON_DARWIN=1 to preview the plan elsewhere (with --dry-run)"
@@ -341,6 +363,11 @@ spin() {
   info "git subtree add --prefix=core <dotfiles-core-url> main --squash"
   exit 1
 }
+
+# Homebrew on PATH for EVERY mode (see brew_shellenv above) — not just the provisioning
+# path, so --links-only can still find mise/nvim/tmux. A no-op on a box without Homebrew;
+# provision() calls it again after a fresh install.
+brew_shellenv
 
 ((DRY)) && say "DRY RUN — no changes will be made; printing the plan only"
 
@@ -405,19 +432,50 @@ seed() {
 
 # ── provision (Homebrew + packages) ──────────────────────────────────────────
 provision() {
+  # STOP when the Command Line Tools are missing. `xcode-select --install` only SPAWNS a GUI
+  # installer and returns immediately — it does not wait, and any failure was swallowed by
+  # `|| true`. The old code printed "then re-run" and then carried straight on into the
+  # Homebrew install and a `git clone` (tpm) that pops a SECOND blocking dialog against a
+  # /usr/bin/git stub. Exiting here is what actually makes "then re-run" true.
   if ! xcode-select -p >/dev/null 2>&1; then
     say "Xcode Command Line Tools"
     xcode-select --install 2>/dev/null || true
-    info "finish the CLT GUI installer if it popped up, then re-run"
+    err "Xcode Command Line Tools are required before provisioning"
+    info "finish the CLT installer window that just opened, then re-run: ./bootstrap.sh"
+    exit 1
   fi
-  if ! command -v brew >/dev/null 2>&1; then
+  # `--no-brew` promises "skip Homebrew/brew bundle", but NO_BREW previously gated only the
+  # bundle below — so on a fresh Mac the flag still downloaded and ran the Homebrew
+  # installer (sudo prompt, several minutes, hundreds of MB). Gate the installer too.
+  if ((!NO_BREW)) && ! command -v brew >/dev/null 2>&1; then
     say "Installing Homebrew"
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    # Download FIRST, check the status, THEN execute. The upstream one-liner
+    # `/bin/bash -c "$(curl -fsSL …)"` cannot fail safely: a failed curl (no network, DNS,
+    # captive portal, proxy, GitHub outage) yields an EMPTY string, and `/bin/bash -c ""` is
+    # a valid program that exits 0. `set -e` never fires — the failing command is inside
+    # $(…) and the outer command succeeded — so the run continued brewless and died minutes
+    # later at `brew: command not found` with NOT ONE symlink wired and no diagnosis.
+    local installer
+    installer="$(mktemp -t brew-install.XXXXXX)" || {
+      err "could not create a temp file for the Homebrew installer"
+      exit 1
+    }
+    if ! curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o "$installer"; then
+      rm -f "$installer"
+      err "could not download the Homebrew installer — check your network/proxy"
+      info "or install it by hand from https://brew.sh, then re-run: ./bootstrap.sh"
+      exit 1
+    fi
+    if ! /bin/bash "$installer"; then
+      rm -f "$installer"
+      err "Homebrew installation failed — see its output above"
+      exit 1
+    fi
+    rm -f "$installer"
   fi
-  # put brew on PATH for the rest of this run (Apple Silicon, then Intel)
-  if [[ -x /opt/homebrew/bin/brew ]]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-  elif [[ -x /usr/local/bin/brew ]]; then eval "$(/usr/local/bin/brew shellenv)"; fi
+  # brew now exists (or never will) — re-run the PATH setup, since the unconditional call
+  # near the top ran before this install.
+  brew_shellenv
   if ((!NO_BREW)) && [[ -f "$REPO/Brewfile" ]]; then
     # B13: skip the expensive resolve+install when the Brewfile is already satisfied.
     # `brew bundle check` is a fast read-only "is everything here installed?" probe, so a
