@@ -23,7 +23,7 @@ is a reminder, not an action. After merging a sync PR:
 
 ```bash
 ./bootstrap.sh --links-only   # re-wire any new/changed Core files
-make test                     # prove the new Core still loads
+make test-repo                # prove the new Core still loads (exercises the loader)
 ```
 
 A **manual** `git subtree pull` is the exception, not the norm; take the released

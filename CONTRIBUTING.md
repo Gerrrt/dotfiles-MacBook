@@ -30,7 +30,7 @@ To change shared config, edit it **in `dotfiles-core`**. A release there fans ou
 
 ```bash
 ./bootstrap.sh --links-only   # re-wire any new/changed Core files
-make test                     # prove the new Core still loads
+make test-repo                # prove the new Core still loads (exercises the loader)
 ```
 
 ## Green the gate
@@ -40,7 +40,7 @@ Humans and CI run the same commands, so "passes locally" means "passes in CI".
 ```bash
 make lint        # shellcheck · shfmt · bash -n · zsh -n · config parse · markdown · secrets
 make test-repo   # bootstrap, the zsh loader, defaults.sh — 48 assertions
-make test        # the vendored Core regression harness
+make test        # the vendored Core regression harness  (CI only — see below)
 make verify-core # the vendored subtree is byte-for-byte upstream
 ```
 
