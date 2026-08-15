@@ -4,9 +4,16 @@
 and the *tracked tree* holds no credentials and no machine state: git identity lives in an
 untracked `~/.config/git/local.gitconfig`, machine-local shell tweaks in an untracked
 `~/.config/zsh/99-local.zsh`, and real secrets in 1Password (`core/zsh/50-op.zsh` provides
-`opsecret`/`openv`/`optoken`). `.gitignore` tracks `ssh/config` but never key material.
-`gitleaks` scans the repo-owned tree on every PR in CI, and locally at commit time **once
-you have run `pre-commit install`** — the local hook is opt-in, CI is not.
+`opsecret`/`openv`/`optoken`). Under `ssh/`, `.gitignore` excludes everything (`ssh/*`)
+and re-includes only the client config (`!ssh/config`), so a private key dropped in that
+directory is untracked by default.
+
+Treat that as a guard against **accident, not an absolute barrier**: ignore rules apply
+only to files git is not already tracking, and `git add -f` overrides them outright. The
+backstops for the deliberate or already-tracked case are `gitleaks`, which scans the
+repo-owned tree on every PR in CI and locally at commit time **once you have run
+`pre-commit install`** (the local hook is opt-in, CI is not), and GitHub's push protection,
+which is enabled on this repo.
 
 The **installer is a different matter**, and it is the main reason this file exists.
 `bootstrap.sh` writes symlinks throughout `$HOME`, moves existing files aside, downloads
