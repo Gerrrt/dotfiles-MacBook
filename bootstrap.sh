@@ -42,8 +42,8 @@ bootstrap.sh — idempotent macOS provision + symlink wiring. Safe to re-run.
   ./bootstrap.sh --no-brew        symlinks + mise, skip Homebrew/brew bundle
   ./bootstrap.sh --macos-defaults also run macos/defaults.sh (system prefs)
   ./bootstrap.sh --set-shell      make Homebrew zsh the login shell (chsh)
-  ./bootstrap.sh --only zsh,nvim  link ONLY these Core module groups (zsh nvim tmux git prompt tools)
-  ./bootstrap.sh --skip tmux      link everything EXCEPT these Core module groups
+  ./bootstrap.sh --only zsh,nvim  link ONLY these module groups (zsh nvim tmux git prompt tools desktop)
+  ./bootstrap.sh --skip desktop   link everything EXCEPT these module groups
   ./bootstrap.sh --uninstall      remove Core symlinks + restore backed-up files
   ./bootstrap.sh --dry-run, -n    print every planned action; change nothing
   ./bootstrap.sh --quiet, -q      show only CHANGES + the summary (quiet re-runs)
@@ -169,6 +169,16 @@ else
   exit 1
 fi
 
+# Register the macOS-only module group BEFORE validating a selector. Core's BLIB_MODULES
+# ("zsh nvim tmux git prompt tools") knows nothing about a tiling WM, a menu bar, or a
+# keyboard remapper — those are this layer's own, so this repo extends the list rather than
+# editing the vendored default (which a subtree pull would overwrite).
+#
+# Without this, `--skip desktop` was rejected as an unknown group and `--only zsh` still
+# wired ghostty/fastfetch/aerospace/sketchybar/karabiner — six configs the operator had
+# just said they didn't want.
+BLIB_MODULES="$BLIB_MODULES desktop"
+
 # Apply any --only/--skip module selection now the validator (blib_select) exists;
 # it aborts (exit 1) on a malformed selector or an unknown group.
 if ((ONLY_SEEN)); then blib_select --only "$ONLY_RAW"; fi
@@ -194,11 +204,19 @@ err() { printf '  %s%s%s %s\n' "$c_r" "$G_ERR" "$c_0" "$*" >&2; }
 # section headers. WIRE_TOTAL is the count of step() sections in wire_links; bump it if
 # you add/remove one (a wrong total is cosmetic — it never affects what gets linked).
 WIRE_STEP=0
-# Count of step() sections in wire_links. The zsh-entry step is conditional (blib_want zsh),
-# so drop it from the total when zsh isn't selected — keeps the [k/N] counter honest under
-# --only/--skip. (Selection is already applied above via blib_select.)
-WIRE_TOTAL=8
-blib_want zsh || WIRE_TOTAL=7
+# Count of step() sections in wire_links, COMPUTED from the active selection rather than
+# hand-maintained — the old `WIRE_TOTAL=8` + "bump it if you add/remove one" was the same
+# manual-mirror pattern that let the uninstall list drift. Sections:
+#   1  Core + macOS overlay (shared scaffold)        — always
+#   +1 zsh entry layer                               — blib_want zsh
+#   +1 git ignore (macOS)                            — blib_want git
+#   +5 ghostty, fastfetch, aerospace, sketchybar, karabiner — blib_want desktop
+# (Selection is already applied above via blib_select.)
+WIRE_TOTAL=1
+blib_want zsh && WIRE_TOTAL=$((WIRE_TOTAL + 1))
+blib_want git && WIRE_TOTAL=$((WIRE_TOTAL + 1))
+blib_want desktop && WIRE_TOTAL=$((WIRE_TOTAL + 5))
+true # keep the last conditional from setting a non-zero status under `set -e`
 step() {
   WIRE_STEP=$((WIRE_STEP + 1))
   ((QUIET)) || printf '%s==>%s %s[%d/%d]%s %s\n' "$c_b" "$c_0" "$c_y" "$WIRE_STEP" "$WIRE_TOTAL" "$c_0" "$*"
@@ -628,29 +646,54 @@ wire_links() {
     link "$REPO/zsh/zshrc" "$CFG/zsh/.zshrc"
   fi
 
-  step "git ignore (macOS)"
-  # global gitignore; macos.zsh/.conf/.gitconfig are wired by blib_link_os_layer above.
-  link "$REPO/os/macos.gitignore" "$CFG/git/ignore"
+  # Rides with the git group, matching how blib_link_os_layer already gates
+  # os/macos.gitconfig on `blib_want git`. Previously ungated, so `--only zsh` wrote a
+  # global gitignore while explicitly excluding git — internally inconsistent.
+  if blib_want git; then
+    step "git ignore (macOS)"
+    # global gitignore; macos.zsh/.conf/.gitconfig are wired by blib_link_os_layer above.
+    link "$REPO/os/macos.gitignore" "$CFG/git/ignore"
+  fi
 
-  step "ghostty"
-  link "$REPO/ghostty/config" "$CFG/ghostty/config"
-
-  step "fastfetch (system banner)"
-  link "$REPO/fastfetch/config.jsonc" "$CFG/fastfetch/config.jsonc"
-
-  # ── macOS desktop layer: tiling WM + menu bar + keyboard remap (GUI apps) ──
+  # ── macOS desktop layer: terminal + banner + tiling WM + menu bar + keyboard ──
   # All read their config from ~/.config; the apps themselves come from the Brewfile.
-  step "aerospace (tiling WM)"
-  link "$REPO/aerospace/aerospace.toml" "$CFG/aerospace/aerospace.toml"
+  # Gated as ONE group (`desktop`, registered near the top of this file) — these are GUI
+  # app configs with no Core counterpart, and `--only zsh` has no business writing them.
+  if blib_want desktop; then
+    step "ghostty"
+    link "$REPO/ghostty/config" "$CFG/ghostty/config"
 
-  step "sketchybar (menu bar)"
-  link "$REPO/sketchybar" "$CFG/sketchybar" # sketchybarrc + colors.sh + plugins/
-  # `|| true` + 2>/dev/null so a non-expanding glob (plugins removed) can't abort the run
-  # under `set -e` after links are already wired — matches the scaffold's guarded chmods.
-  run chmod +x "$REPO"/sketchybar/sketchybarrc "$REPO"/sketchybar/plugins/*.sh 2>/dev/null || true
+    step "fastfetch (system banner)"
+    link "$REPO/fastfetch/config.jsonc" "$CFG/fastfetch/config.jsonc"
 
-  step "karabiner (keyboard)"
-  link "$REPO/karabiner/karabiner.json" "$CFG/karabiner/karabiner.json"
+    step "aerospace (tiling WM)"
+    link "$REPO/aerospace/aerospace.toml" "$CFG/aerospace/aerospace.toml"
+
+    step "sketchybar (menu bar)"
+    link "$REPO/sketchybar" "$CFG/sketchybar" # sketchybarrc + colors.sh + plugins/
+    # `|| true` + 2>/dev/null so a non-expanding glob (plugins removed) can't abort the run
+    # under `set -e` after links are already wired — matches the scaffold's guarded chmods.
+    run chmod +x "$REPO"/sketchybar/sketchybarrc "$REPO"/sketchybar/plugins/*.sh 2>/dev/null || true
+
+    step "karabiner (keyboard)"
+    link "$REPO/karabiner/karabiner.json" "$CFG/karabiner/karabiner.json"
+  fi
+
+  # ── local core/ guard (L6) ────────────────────────────────────────────────────
+  # Install the pre-commit hook that REJECTS a hand-edit of the vendored core/ subtree.
+  # It shipped in the shared scaffold but was only ever called by upstream sync-core.sh —
+  # so anyone who clones this repo and merges sync PRs through the GitHub UI never got it,
+  # and could drift core/ from day one with no local signal. CI's core-integrity still
+  # catches it, but at PR time rather than commit time.
+  #
+  # Not DRY-aware in the lib (it writes the hook unconditionally), so gate it here. `||
+  # true` because it returns non-zero on the benign "you already have a custom pre-commit
+  # hook" path, which must not abort a bootstrap under `set -e`.
+  if ((DRY)); then
+    info "would install the core/ pre-commit guard (rejects hand-edits to the vendored subtree)"
+  else
+    blib_install_core_guard "$REPO" || true
+  fi
 }
 
 # ── uninstall: reverse the symlink wiring + restore backups (B4) ──────────────
@@ -688,15 +731,22 @@ unlink_dest() { # unlink_dest <dest>
     noop "skip restore (real file present, not ours): ${dest/#"$HOME"/\~}"
     return 0
   fi
-  # Restore the most recent backup, if any. The backup suffix is a zero-padded
-  # YYYYMMDD-HHMMSS stamp, so a lexical sort IS chronological — the LAST glob match is the
-  # newest. nullglob makes a no-match yield an empty array (not the literal pattern).
-  local newest=""
-  local -a baks
+  # Restore the most recent backup, if any — chosen by MTIME, not by sorting the name.
+  #
+  # This used to claim "the suffix is a zero-padded YYYYMMDD-HHMMSS stamp, so a lexical
+  # sort IS chronological". That is false across the fleet: link() (this file) stamps
+  # %Y%m%d-%H%M%S while Core's blib_link stamps a bare epoch (%s), and both write into
+  # this same `.pre-dotfiles.*` namespace. "20…" always sorts after "17…", so a lexical
+  # pick returns the datestamped file regardless of age. Comparing mtimes is correct for
+  # either format and stays correct whatever Core does next (dotfiles-core#464).
+  #
+  # nullglob makes a no-match expand to nothing rather than the literal pattern.
+  local newest="" b
   shopt -s nullglob
-  baks=("$dest".pre-dotfiles.*)
+  for b in "$dest".pre-dotfiles.*; do
+    [[ -z "$newest" || "$b" -nt "$newest" ]] && newest="$b"
+  done
   shopt -u nullglob
-  ((${#baks[@]})) && newest="${baks[${#baks[@]} - 1]}"
   if [[ -n "$newest" && -e "$newest" ]]; then
     if ((DRY)); then
       info "would restore backup: ${newest/#"$HOME"/\~} → ${dest/#"$HOME"/\~}"
@@ -720,7 +770,8 @@ uninstall() {
     "$CFG/tmux/tmux.conf" "$CFG/tmux/tmux.reset.conf" "$CFG/tmux/scripts" "$CFG/tmux/os.conf"
     "$CFG/nvim" "$HOME/.vimrc"
     "$HOME/.gitconfig" "$CFG/git/os.gitconfig" "$CFG/git/ignore"
-    "$CFG/mise/config.toml" "$CFG/jj/config.toml" "$CFG/ghostty/config" "$CFG/fastfetch/config.jsonc" "$HOME/.ssh/config"
+    "$CFG/mise/config.toml" "$CFG/jj/config.toml" "$CFG/atuin/config.toml"
+    "$CFG/ghostty/config" "$CFG/fastfetch/config.jsonc" "$HOME/.ssh/config"
     "$CFG/aerospace/aerospace.toml" "$CFG/sketchybar" "$CFG/karabiner/karabiner.json"
   )
   local f
