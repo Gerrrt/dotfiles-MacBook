@@ -1,22 +1,26 @@
 # Security Policy
 
-`dotfiles-MacBook` ships **configuration and an installer** — no running service, no
-credentials, no machine state. Secrets are deliberately kept out of the tree: git identity
-lives in an untracked `~/.config/git/local.gitconfig`, machine-local shell tweaks in an
-untracked `~/.config/zsh/99-local.zsh`, and real secrets in 1Password (`core/zsh/50-op.zsh`
-provides `opsecret`/`openv`/`optoken`). `.gitignore` tracks `ssh/config` but never key
-material, and `gitleaks` runs over the repo-owned tree in CI and at commit time.
+`dotfiles-MacBook` ships **configuration and an installer**. It is not a running service,
+and the *tracked tree* holds no credentials and no machine state: git identity lives in an
+untracked `~/.config/git/local.gitconfig`, machine-local shell tweaks in an untracked
+`~/.config/zsh/99-local.zsh`, and real secrets in 1Password (`core/zsh/50-op.zsh` provides
+`opsecret`/`openv`/`optoken`). `.gitignore` tracks `ssh/config` but never key material.
+`gitleaks` scans the repo-owned tree on every PR in CI, and locally at commit time **once
+you have run `pre-commit install`** — the local hook is opt-in, CI is not.
 
-Even so, two classes of issue are worth a **security** report rather than a normal issue:
+The **installer is a different matter**, and it is the main reason this file exists.
+`bootstrap.sh` writes symlinks throughout `$HOME`, moves existing files aside, downloads
+and executes the official Homebrew installer, and — behind explicit opt-in flags — invokes
+`sudo` to append to `/etc/shells` (`--set-shell`) and runs `macos/defaults.sh` to change
+system preferences (`--macos-defaults`). Those are genuine system changes; a defect that
+subverts one of them is in scope below.
+
+Two classes of issue are therefore worth a **security** report rather than a normal issue:
 
 - a tracked file that leaks a secret, token, key, or other sensitive value, and
 - a path where `bootstrap.sh`, `macos/defaults.sh`, or a `sketchybar/plugins/*.sh` script
   can be coerced into executing untrusted input, or into writing outside the paths it
   documents.
-
-`bootstrap.sh` warrants particular attention: it symlinks into `$HOME`, moves existing
-files aside, can invoke `sudo` (for `/etc/shells` under `--set-shell`), and downloads and
-executes the official Homebrew installer. Anything that subverts one of those is in scope.
 
 ## Reporting a vulnerability
 
