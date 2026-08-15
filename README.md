@@ -118,8 +118,30 @@ exec zsh
 ```
 
 `core/` is a vendored subtree and is **already present** in a clone — there is no
-submodule step. Flags: `--dry-run`/`-n`, `--links-only`, `--no-brew`,
-`--set-shell` (make the Homebrew zsh your login shell), `--macos-defaults`.
+submodule step.
+
+| Flag | What it does |
+| --- | --- |
+| `--dry-run`, `-n` | print every planned action; change nothing |
+| `--links-only` | just (re)create symlinks, no installs |
+| `--no-brew` | symlinks + mise, skip Homebrew **and** `brew bundle` |
+| `--set-shell` | make the Homebrew zsh your login shell (`chsh`) |
+| `--macos-defaults` | also run `macos/defaults.sh` (system prefs) |
+| `--only zsh,nvim` | link ONLY these module groups |
+| `--skip desktop` | link everything EXCEPT these module groups |
+| `--uninstall` | remove the symlinks and restore backed-up files |
+| `--quiet`, `-q` | show only CHANGES + the summary |
+| `--json` | machine-readable summary on stdout (for automation) |
+| `-h`, `--help` | the same list, from the installer itself |
+
+Module groups are `zsh nvim tmux git prompt tools desktop` — the first six come
+from Core, `desktop` is this layer's own (ghostty, fastfetch, aerospace,
+sketchybar, karabiner).
+
+**If something goes wrong, `--uninstall` is the way back.** It removes only
+symlinks that point into this repo — never a real file, never a foreign link —
+and restores the most recent `.pre-dotfiles.*` backup it made. Pair it with
+`--dry-run` to see exactly what it would do first.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -154,9 +176,24 @@ This is an **OS-native layer**, so the contribution rule is a boundary rule:
    `dotfiles-core`, run `make audit` there, then `make sync` fans it out here.
 2. **Keep changes genuinely macOS.** If it would be identical on every machine,
    it belongs in Core; if it changes with the operator, it belongs in a role repo.
-3. **Green the gate.** CI runs shellcheck + shfmt + `bash -n` / `zsh -n` +
-   `make test-repo` (as individual targets); `make lint` bundles the same checks
-   locally, and `pre-commit install` mirrors them at commit time.
+3. **Green the gate.** `make lint` bundles the repo-owned checks locally and
+   `pre-commit install` mirrors them at commit time, so "passes locally" means
+   "passes in CI". The full suite:
+
+   | Gate | Covers |
+   | --- | --- |
+   | shellcheck · shfmt · `bash -n` | repo-owned bash |
+   | `zsh -n` | the zsh entry files (no `.sh` extension, so the bash globs miss them) |
+   | `make test-repo` | bootstrap, the zsh loader, `defaults.sh` — 48 assertions |
+   | `make config-check` | every repo-owned `.json` / `.jsonc` / `.toml` parses |
+   | `make markdownlint` | repo-owned markdown, against `.markdownlint.jsonc` |
+   | `make secrets` | gitleaks over the repo-owned tree |
+   | `make core-audit` · `make verify-core` | the vendored Core subtree hasn't drifted |
+   | `actionlint` | the workflows themselves |
+   | macOS smoke (CI) | the entry points on real Darwin — clipboard, Brewfile, bootstrap |
+
+   CI requires a single aggregated `ci ok` context rather than each job by name,
+   so adding or renaming a leg needs no ruleset change.
 
 Bugs and ideas: open an
 [issue](https://github.com/dotgibson/dotfiles-MacBook/issues).
