@@ -52,4 +52,13 @@
       "ul",
     ],
   },
+
+  // MD060 (table-column-style, added in markdownlint-cli2 0.23) objects to the compact
+  // separator row this repo uses everywhere — `|---------|` rather than `| ------- |`.
+  // It is pure formatting taste with no readability or correctness payload, and it fired
+  // 148 times across the docs: enforcing it would mean reformatting every table in the
+  // repo, burying real findings in churn. The other three rules the gate surfaced
+  // (MD040 fenced-code-language, MD036 emphasis-as-heading) were genuine and were fixed
+  // rather than disabled.
+  "MD060": false,
 }

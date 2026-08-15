@@ -103,6 +103,7 @@ brew "shellcheck"    # static analysis for bash (bootstrap.sh, macos/defaults.sh
 brew "shfmt"         # bash formatter (repo style: `shfmt -i 2`)
 brew "pre-commit"    # local commit-time lint gate — run `pre-commit install` once
 brew "actionlint"    # GitHub Actions workflow linter
+brew "gitleaks"      # secret scanner — `make secrets` / pre-commit gate over the repo-owned tree
 brew "luacheck"      # Lua linter (core/nvim — uses core/nvim/.luacheckrc)
 brew "stylua"        # Lua formatter (core/nvim)
 brew "hyperfine"     # command-line benchmarking (Core's 00-tools.zsh perf note + bench-core.sh use it; own command, probes HAVE_HYPERFINE)

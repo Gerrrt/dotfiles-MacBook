@@ -26,13 +26,13 @@ ZSH_FILES := zsh/zshenv zsh/zprofile zsh/zshrc os/macos.zsh
 
 .PHONY: help lint fmt fmt-check shellcheck syntax zsh-syntax check core-advisory \
         tools test test-repo test-all bench bootstrap bootstrap-dry doctor sync-core \
-        core-audit verify-core core-lock brew-check
+        core-audit verify-core core-lock brew-check secrets config-check markdownlint
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-15s\033[0m %s\n",$$1,$$2}'
 
-lint: shellcheck fmt-check syntax zsh-syntax ## Run all gating checks (shellcheck + format + bash/zsh syntax)
+lint: shellcheck fmt-check syntax zsh-syntax config-check markdownlint secrets ## Run all gating checks (shell + format + syntax + configs + markdown + secrets)
 
 shellcheck: ## Static analysis of repo-owned bash
 	@shellcheck $(SH_FILES)
@@ -51,6 +51,33 @@ zsh-syntax: ## `zsh -n` syntax gate on repo-owned zsh modules (skips if zsh abse
 	@command -v zsh >/dev/null 2>&1 || { echo "  skip zsh-syntax (zsh not installed)"; exit 0; }
 	@for f in $(ZSH_FILES); do zsh -n "$$f" || exit 1; done
 	@echo "zsh syntax ok:"; printf '  %s\n' $(ZSH_FILES)
+
+# Repo-owned secret scan. Core's audit runs gitleaks over core/ ONLY, so this repo's own
+# tree — Brewfile, os/, zsh/, ssh/config, sketchybar/, macos/defaults.sh — was never
+# scanned by anything. GitHub push protection was the only net, and it only fires after
+# you try to push. Version is pinned in the vendored core/scripts/tool-versions.env
+# (GITLEAKS_VERSION/GITLEAKS_SHA256); CI installs that exact build via setup-core-tools.
+# Self-skips when gitleaks is absent so `make lint` still works on a bare box.
+secrets: ## Scan the working tree for committed secrets (gitleaks; skips if not installed)
+	@command -v gitleaks >/dev/null 2>&1 || { echo "  skip secrets (gitleaks not installed — brew bundle)"; exit 0; }
+	@gitleaks dir . --no-banner --redact
+
+# Parse-gate the JSON/JSONC/TOML the macOS desktop layer is made of. Nothing checked these
+# before: a malformed karabiner.json or aerospace.toml passed every gate and only failed on
+# the next fresh install, silently killing the keyboard remap or the tiling WM.
+config-check: ## Parse every repo-owned .json/.jsonc/.toml (karabiner, aerospace, fastfetch, renovate)
+	@./test/check-configs.sh
+
+# .markdownlint.jsonc existed but NOTHING ran it — 55 lines of dead config next to a 52 KB
+# guide. markdownlint-cli2 is npm-only (no single binary to SHA-pin like the others), so it
+# is version-pinned from the vendored tool-versions.env and run through npx. Self-skips
+# without node so `make lint` still works on a bare box.
+markdownlint: ## Lint repo-owned markdown against .markdownlint.jsonc (skips without node)
+	@command -v npx >/dev/null 2>&1 || { echo "  skip markdownlint (node/npx not installed)"; exit 0; }
+	@v="$$(sed -n 's/^MARKDOWNLINT_VERSION=//p' core/scripts/tool-versions.env | head -n1)"; \
+	 npx --yes "markdownlint-cli2@$${v:-latest}" "*.md" "sketchybar/*.md" >/dev/null \
+	   && echo "  markdownlint ok" \
+	   || { npx --yes "markdownlint-cli2@$${v:-latest}" "*.md" "sketchybar/*.md"; exit 1; }
 
 core-advisory: ## Non-blocking shellcheck over vendored core/ (fixes land upstream)
 	@shellcheck $$(find core -name '*.sh') || \
