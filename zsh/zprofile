@@ -33,12 +33,23 @@
 # juliaup-managed Julia (if installed). `typeset -U path` (.zshenv) dedups the prepend.
 [[ -d "$HOME/.juliaup/bin" ]] && path=("$HOME/.juliaup/bin" $path)
 
+# Where this repo lives — DERIVED from this file's own resolved path, never hardcoded.
+# %x is the sourced path (~/.config/zsh/.zprofile), :A follows the bootstrap symlink back
+# to <repo>/zsh/zprofile, and :h:h climbs to the repo root.
+#
+# This used to read "$HOME/dotfiles-MacBook". The clone location is the operator's choice,
+# and a real checkout of this repo lives at ~/code/dotgibson/dotfiles-MacBook — so the
+# literal pointed at a directory that does not exist, and mise silently trusted nothing.
+# os/macos.zsh sets the same var with `:=` for non-login shells; whichever runs first wins.
+: "${DOTFILES_MACBOOK_ROOT:=${${(%):-%x}:A:h:h}}"
+export DOTFILES_MACBOOK_ROOT
+
 # mise: trust THIS machine's dotfiles dir for project mise configs. This lives in the OS
 # layer on purpose — the trusted path is machine-specific (the Core config.toml ships a
 # portable default and must stay byte-identical to upstream so `git subtree pull` never
 # conflicts). MISE_TRUSTED_CONFIG_PATHS is mise's env override (colon-separated); set here
 # rather than edited into the vendored core/mise/config.toml.
-export MISE_TRUSTED_CONFIG_PATHS="$HOME/dotfiles-MacBook${MISE_TRUSTED_CONFIG_PATHS:+:$MISE_TRUSTED_CONFIG_PATHS}"
+export MISE_TRUSTED_CONFIG_PATHS="$DOTFILES_MACBOOK_ROOT${MISE_TRUSTED_CONFIG_PATHS:+:$MISE_TRUSTED_CONFIG_PATHS}"
 
 # 1Password SSH agent (macOS). `ssh`/`git` use keys held in 1Password. Guarded on
 # the socket actually existing, so this self-disables (and ssh falls back to the
