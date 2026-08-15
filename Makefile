@@ -146,7 +146,7 @@ sync-core: ## Reminder: how the vendored Core subtree gets updated
 	@echo "  Normally nothing to run: a dotfiles-core release opens a sync PR here"
 	@echo "  automatically (sync-fanout.yml). Merge it, then:"
 	@echo "    ./bootstrap.sh --links-only   # re-wire any new/changed Core files"
-	@echo "    make test                     # prove the new Core still loads"
+	@echo "    make test-repo                # prove the new Core still loads (exercises the loader)"
 	@echo "  By hand, take the RELEASED tag (never main) and regenerate the lock,"
 	@echo "  or core-integrity reports the fresh subtree as TAMPERED:"
 	@echo "    git subtree pull --prefix=core <remote>/dotfiles-core refs/tags/v4 --squash"

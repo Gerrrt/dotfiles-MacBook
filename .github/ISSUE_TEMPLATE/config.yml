@@ -1,0 +1,11 @@
+# Keep blank issues available: this repo takes genuine one-off questions (a broken
+# install on an unusual setup, a macOS-version quirk) that neither template fits, and
+# forcing a template on those tends to produce a badly-shaped bug report instead.
+blank_issues_enabled: true
+contact_links:
+  - name: Security report
+    url: https://github.com/dotgibson/dotfiles-MacBook/security/advisories/new
+    about: "Do not file security issues publicly — use private vulnerability reporting (see SECURITY.md)."
+  - name: Something in core/ is broken
+    url: https://github.com/dotgibson/dotfiles-core/issues/new/choose
+    about: "core/ is vendored from dotfiles-core; a fix here is overwritten on the next sync."
