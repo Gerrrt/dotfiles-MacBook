@@ -5,14 +5,15 @@
 # core/zsh/options.zsh). This file is repo-owned and lives in the macOS layer, which
 # loads AFTER compinit — so os/macos.zsh adds this dir to fpath and then explicitly
 # `autoload -Uz _bootstrap` + `compdef`s it. The flags mirror bootstrap.sh's
-# KNOWN_FLAGS parser (keep them in sync); --only/--skip take Core module groups.
+# KNOWN_FLAGS parser (keep them in sync); --only/--skip take module groups: Core's
+# (zsh nvim tmux git prompt tools) plus this layer's own `desktop`.
 _arguments -s \
   '(--links-only)--links-only[just (re)create symlinks, no installs]' \
   '(--no-brew)--no-brew[symlinks + mise, skip Homebrew/brew bundle]' \
   '(--macos-defaults)--macos-defaults[also run macos/defaults.sh (system prefs)]' \
   '(--set-shell)--set-shell[make the Homebrew zsh the login shell (chsh)]' \
-  '(--only)--only[link ONLY these Core module groups]:group:(zsh nvim tmux git prompt tools)' \
-  '(--skip)--skip[link everything EXCEPT these groups]:group:(zsh nvim tmux git prompt tools)' \
+  '(--only)--only[link ONLY these module groups]:group:(zsh nvim tmux git prompt tools desktop)' \
+  '(--skip)--skip[link everything EXCEPT these groups]:group:(zsh nvim tmux git prompt tools desktop)' \
   '(--uninstall)--uninstall[remove Core symlinks + restore backed-up files]' \
   '(--dry-run -n)'{--dry-run,-n}'[print every planned action; change nothing]' \
   '(--quiet -q)'{--quiet,-q}'[show only CHANGES + the summary (quiet re-runs)]' \

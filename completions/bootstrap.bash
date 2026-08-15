@@ -7,7 +7,10 @@
 # the one thing worth completing in bash is the installer itself. Source this from
 # ~/.bashrc (or ~/.bash_profile):
 #
-#     source "$HOME/dotfiles-MacBook/completions/bootstrap.bash"
+#     source /path/to/dotfiles-MacBook/completions/bootstrap.bash
+#
+# (Use your actual clone path — the repo does not assume one. The zsh side derives it;
+# bash has no equivalent of zsh's %x, so this line is yours to fill in.)
 #
 # Flags mirror bootstrap.sh's parser (KNOWN_FLAGS) — keep them in step.
 _bootstrap_sh_complete() {

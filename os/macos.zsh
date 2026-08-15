@@ -27,14 +27,26 @@ else  # bare fallback if 80-os.zsh is sourced without Core's 00-tools.zsh
   command -v ty >/dev/null 2>&1 && eval "$(ty generate-shell-completion zsh 2>/dev/null)"
 fi
 
+# ── where this repo lives (DERIVED, never hardcoded) ─────────────────────────
+# %x = the path of THIS sourced file, :A follows the bootstrap symlink back to
+# <repo>/os/macos.zsh, :h:h climbs to the repo root. The same technique Core's
+# 10-options.zsh uses, and the one this file already relied on for its completions dir.
+#
+# It is derived rather than written down because the clone location is the operator's
+# choice: the README says ~/dotfiles-MacBook, but a real checkout of this very repo lives
+# at ~/code/dotgibson/dotfiles-MacBook, where every hardcoded "$HOME/dotfiles-MacBook"
+# silently pointed at a directory that does not exist. `.zprofile` sets this too (login
+# shells need it before .zshrc runs); `:=` means whichever runs first wins and the other
+# is a no-op, and a non-login interactive shell still gets it here.
+: "${DOTFILES_MACBOOK_ROOT:=${${(%):-%x}:A:h:h}}"
+export DOTFILES_MACBOOK_ROOT
+
 # ── repo-owned completions (bootstrap.sh) ─────────────────────────────────────
 # Core adds its completions dir to fpath BEFORE compinit (10-options.zsh), so compinit
 # auto-registers them. This macOS layer loads AFTER compinit, so add the repo's
 # completions dir to fpath and then explicitly autoload + compdef — compinit won't
-# re-scan fpath on its own. Resolve the dir relative to THIS file: %x = the sourced
-# path, :A follows the bootstrap symlink back to <repo>/os/macos.zsh, :h:h climbs to
-# the repo root, then /completions (the proven pattern from Core's 10-options.zsh).
-_macos_compdir="${${(%):-%x}:A:h:h}/completions"
+# re-scan fpath on its own.
+_macos_compdir="$DOTFILES_MACBOOK_ROOT/completions"
 if [[ -d "$_macos_compdir" ]] && (($+functions[compdef])); then
   fpath=("$_macos_compdir" $fpath)
   autoload -Uz _bootstrap 2>/dev/null && compdef _bootstrap bootstrap.sh ./bootstrap.sh
@@ -75,7 +87,9 @@ command -v mas >/dev/null 2>&1 && {
 }
 
 # ── dotfiles maintenance: jump to this repo ──────────────────────────────────
-alias dotsync='cd "$HOME/dotfiles-MacBook"'
+# Single-quoted so $DOTFILES_MACBOOK_ROOT is resolved at RUN time, not alias-definition
+# time — the var is exported above from this file's own resolved path.
+alias dotsync='cd "$DOTFILES_MACBOOK_ROOT"'
 
 # ── 1Password CLI sign-in convenience (50-op.zsh in Core has the helpers) ───────
 command -v op >/dev/null 2>&1 && alias opsignin='eval "$(op signin)"'
