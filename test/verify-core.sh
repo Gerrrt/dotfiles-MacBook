@@ -99,6 +99,12 @@ rm -rf "$TMP/.git" # compare working trees only
 # We tolerate its CONTENT drifting, NOT its ABSENCE: Core ships it as the seed pins, so a
 # deletion/omission on either side is a real defect `-x` would otherwise hide. Assert it
 # exists in both trees first, then run the content-excluded diff for everything else.
+#
+# ALSO excluded: .DS_Store. Finder drops one into any directory a user browses, so on a real
+# Mac — this repo's entire audience — a stray core/.DS_Store made this gate report
+# `Only in core: .DS_Store` and fail. It never surfaced in CI because runners have no Finder.
+# It's macOS turd, never Core content, and os/macos.gitignore already excludes it from git;
+# excluding it here can't mask a genuine drift.
 if [[ ! -f "$TMP/nvim/lazy-lock.json" ]]; then
   fail "upstream @ ${SPLIT:0:12} is missing nvim/lazy-lock.json — Core must ship the seed lockfile"
   exit 1
@@ -107,8 +113,8 @@ if [[ ! -f core/nvim/lazy-lock.json ]]; then
   fail "vendored core/nvim/lazy-lock.json is missing — restore it (Core ships the seed pins)"
   exit 1
 fi
-echo ":: vendored core/ vs upstream dotfiles-core @ ${SPLIT:0:12} (lazy-lock.json: presence-checked, content excluded — machine-mutable)"
-if diff -rq -x lazy-lock.json "$TMP" core >"$TMP.diff" 2>&1; then
+echo ":: vendored core/ vs upstream dotfiles-core @ ${SPLIT:0:12} (lazy-lock.json: presence-checked, content excluded — machine-mutable; .DS_Store ignored)"
+if diff -rq -x lazy-lock.json -x .DS_Store "$TMP" core >"$TMP.diff" 2>&1; then
   ok "vendored core/ is byte-for-byte upstream @ ${SPLIT:0:12} (lazy-lock.json excluded)"
   exit 0
 fi
