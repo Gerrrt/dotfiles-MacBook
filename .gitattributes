@@ -24,6 +24,11 @@ zsh/zshrc    text eol=lf
 *.yml        text eol=lf
 *.yaml       text eol=lf
 Brewfile     text eol=lf
+# Linguist reads the Brewfile's Ruby DSL as Ruby — all 10.6 KB of it, which made "Ruby"
+# the second-largest language on a repo that is Shell. That also caused CodeQL's default
+# setup to enable a Ruby analysis, which FAILED on main before self-correcting to
+# actions-only. Not a source file; don't count it and don't offer it for analysis.
+Brewfile     linguist-detectable=false
 Makefile     text eol=lf
 
 # ── Vendored Core subtree — authored upstream in dotfiles-core ─────────────────

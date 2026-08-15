@@ -48,7 +48,7 @@ and `.zshrc` live under `~/.config/zsh/` instead of `$HOME` — everything after
 `.zshrc` does almost nothing itself. It declares the order and delegates to the
 vendored loader:
 
-```
+```text
 tools → ui → options → history → aliases → git → functions → fzf → bindings → plugins → op → maint → update → os → local
 ```
 
@@ -231,7 +231,7 @@ Auto-bootstrapped: TPM is cloned on first run and `install_plugins` fires.
 
 ### 2.6 Step-by-step workflows
 
-**A. Create, name, detach a persistent session**
+#### A. Create, name, detach a persistent session
 
 1. Just open a terminal — you're auto-`exec`'d into session **`main`** (the default;
    configurable via `DOTFILES_TMUX_SESSION` — §2.5).
@@ -244,7 +244,7 @@ Auto-bootstrapped: TPM is cloned on first run and `install_plugins` fires.
 5. Re-attach later: open any terminal (auto-attaches to `main`), or
    `sesh connect <name>` / `prefix f` for a specific one.
 
-**B. Split, resize, navigate panes**
+#### B. Split, resize, navigate panes
 
 1. Split keeping cwd: `prefix |` (vertical) / `prefix -` (horizontal). Full-span
    variants: `prefix \` (full-height vertical), `prefix _` (full-width horizontal).
@@ -255,7 +255,7 @@ Auto-bootstrapped: TPM is cloned on first run and `install_plugins` fires.
 5. Type into **all** panes at once: `prefix *` (synchronize-panes toggle).
 6. Floating pane (tmux 3.7+, capability-probed): `prefix F`.
 
-**C. Scrollback → search → system clipboard**
+#### C. Scrollback → search → system clipboard
 
 1. Enter copy mode: `prefix Enter` (or scroll with the mouse — `mouse on`).
 2. Search the scrollback: `/` (forward) or `?` (backward), `n`/`N` to cycle — the

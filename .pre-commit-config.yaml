@@ -18,6 +18,12 @@ repos:
       - id: check-executables-have-shebangs
       - id: check-shebang-scripts-are-executable
       - id: check-yaml
+      # The macOS desktop layer is JSON/TOML and nothing checked it. `check-json` is
+      # strict, so the JSONC files (comments are legal there) are excluded and covered by
+      # `make config-check` below, which understands both dialects.
+      - id: check-json
+        exclude: '\.jsonc$'
+      - id: check-toml
 
   - repo: https://github.com/koalaman/shellcheck-precommit
     rev: v0.10.0
@@ -48,6 +54,28 @@ repos:
         language: system
         pass_filenames: false
         files: (\.zsh$|^zsh/)
+      # Secret scan over the REPO-OWNED tree. Core's audit runs gitleaks over core/ only,
+      # so Brewfile, os/, zsh/, ssh/config, sketchybar/ and macos/defaults.sh were never
+      # scanned by anything — GitHub push protection was the only net, and it only fires
+      # after you try to push. Unfiltered by `files:` on purpose: a secret can land in any
+      # file, so this runs on every commit.
+      - id: gitleaks
+        name: gitleaks (secret scan)
+        entry: make secrets
+        language: system
+        pass_filenames: false
+      - id: config-check
+        name: structured config parse (json/jsonc/toml)
+        entry: make config-check
+        language: system
+        pass_filenames: false
+        files: '\.(json|jsonc|toml)$'
+      - id: markdownlint
+        name: markdownlint (repo-owned markdown)
+        entry: make markdownlint
+        language: system
+        pass_filenames: false
+        files: '\.md$'
       # Behavioral gate for the repo-owned scripts (bootstrap.sh, the zsh loader,
       # macos/defaults.sh, the bootstrap completion). Hermetic + fast; mirrors the
       # CI "repo behavioral tests" step so "passes pre-commit" == "passes CI".

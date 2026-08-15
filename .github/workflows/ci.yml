@@ -128,6 +128,7 @@ jobs:
         with:
           shellcheck: "true"
           shfmt: "true"
+          gitleaks: "true"
 
       # Defense in depth: assert make's shellcheck/shfmt are the verified ones from
       # bindir, not a preinstalled copy shadowing them on PATH (the bypass fixed in core#81).
@@ -156,6 +157,24 @@ jobs:
 
       - name: repo behavioral tests (bootstrap, loader, defaults)
         run: make test-repo
+
+      # The macOS desktop layer is JSON/TOML and nothing parsed it — a malformed
+      # karabiner.json or aerospace.toml shipped green and only failed on the next fresh
+      # install. python3 is preinstalled on the runner (3.11+, so tomllib is available).
+      - name: structured config parse (json/jsonc/toml)
+        run: make config-check
+
+      # .markdownlint.jsonc existed but nothing ran it. markdownlint-cli2 is npm-only, so
+      # it is version-pinned from the vendored tool-versions.env and run via npx (node is
+      # preinstalled on the runner).
+      - name: markdownlint
+        run: make markdownlint
+
+      # Repo-owned secret scan. Core's audit covers core/ only; this covers the tree this
+      # repo actually owns. gitleaks is installed above by setup-core-tools, SHA-verified
+      # against the pin in the vendored tool-versions.env.
+      - name: gitleaks (secret scan)
+        run: make secrets
 
       - name: core/ advisory (non-blocking)
         run: make core-advisory
