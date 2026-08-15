@@ -26,8 +26,15 @@ on:
     branches: [main]
     paths:
       - '**'
-      # Docs and licence — never installed.
+      # Docs and licence — never installed. BOTH markdown forms are listed on purpose:
+      # GitHub documents `**.js` as matching "all .js files in the repository", which
+      # implies `**` spans directory separators — but the filter-pattern semantics are
+      # not pinned down explicitly anywhere citable, and this repo has nested markdown
+      # (sketchybar/PARITY.md, .github/ISSUE_TEMPLATE/*.md). Listing `**/*.md` as well
+      # costs nothing and makes the exclusion correct under either reading, rather than
+      # leaving release correctness resting on a disputed glob.
       - '!**.md'
+      - '!**/*.md'
       - '!LICENSE'
       # CI plumbing and the test suite — neither is wired into $HOME by bootstrap.sh.
       - '!.github/**'
