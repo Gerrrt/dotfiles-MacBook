@@ -1,5 +1,10 @@
 # dotfiles-MacBook/.gitignore — config + scripts only; never machine state/secrets.
-.claude/
+# ROOT-ANCHORED (leading slash) on purpose: a bare `.claude/` matches at EVERY depth, so it
+# also shadowed the VENDORED core/.claude/ tree (agents/, commands/, hooks/, settings.json).
+# Those files stayed visible only because they were tracked before the rule existed — a
+# future Core release adding one there would have been invisible to `git status` and needed
+# `git add -f` during a subtree conflict. Keep the slash.
+/.claude/
 # machine-specific shell overrides (never synced; sourced last by .zshrc)
 zsh/local.zsh
 # Core is a vendored git-subtree under core/ and IS tracked — including the nvim
