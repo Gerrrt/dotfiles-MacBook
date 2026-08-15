@@ -1,0 +1,17 @@
+# CODEOWNERS — dotfiles-MacBook
+#
+# MUST live at the repo root, .github/, or docs/ — GitHub reads it nowhere else.
+# The vendored core/CODEOWNERS is therefore INERT here: it is authored upstream in
+# dotfiles-core and governs that repo, not this one. This file is the one GitHub reads.
+#
+# A single catch-all owner is deliberate: this is a personal-but-public showcase system
+# with one author. Note that CODEOWNERS is only consulted when a ruleset enables
+# "require review from Code Owners" — which this repo does NOT currently do, since the
+# maintainer is also the only reviewer. It exists so GitHub can attribute ownership and
+# auto-request review, and so the rule CAN be turned on without a scramble.
+* @Gerrrt
+
+# The vendored Core subtree is authored upstream and must not be hand-edited here; the
+# local pre-commit guard and the core-integrity CI job both reject it. Listed explicitly
+# so a PR that somehow touches it is unmistakably flagged for the maintainer.
+/core/ @Gerrrt
