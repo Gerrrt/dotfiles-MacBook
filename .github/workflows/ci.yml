@@ -11,18 +11,26 @@ on:
   # De-duplicated triggers: a PR'd branch previously ran CI TWICE (the `push` and the
   # `pull_request` event fire for the same commit, and their github.ref differs so
   # concurrency didn't collapse them). Now `push` is scoped to the default branch + tags
-  # (post-merge / release signal); everything else is gated by `pull_request`. Pure-docs
-  # changes skip the shell suite via paths-ignore.
+  # (post-merge / release signal); everything else is gated by `pull_request`.
+  #
+  # NO `paths-ignore` HERE — deliberately. It is the one kind of skip that DEADLOCKS a
+  # required status check. GitHub treats the two kinds very differently:
+  #
+  #   • a job skipped by a job-level `if:` reports conclusion `skipped`, which a required
+  #     check counts as PASSING — this is what the `changes` gating below produces, and
+  #     it is fine;
+  #   • a workflow skipped by `paths-ignore` never creates its check runs AT ALL, so a
+  #     required context sits in "Expected — waiting for status" forever and the PR can
+  #     never be merged.
+  #
+  # So the moment any `CI` context became required, a docs-only PR would be permanently
+  # unmergeable. The work is still skipped for docs — the `changes` job below classifies
+  # `*.md`/`LICENSE` as inert, so only the two cheap jobs (`changes`, `actionlint`) plus
+  # the `ci-ok` gate actually run — but every context now reports on every PR.
   push:
     branches: [main]
     tags: ["v*"]
-    paths-ignore:
-      - "**.md"
-      - "LICENSE"
   pull_request:
-    paths-ignore:
-      - "**.md"
-      - "LICENSE"
 
 # Incremental CI: a newer push to the same ref cancels the in-flight run rather
 # than letting a stale job burn minutes next to the fresh one.
@@ -37,7 +45,13 @@ jobs:
   # Incremental CI: classify the changed paths so a core-only or repo-shell-only PR
   # doesn't pay the full matrix. FAIL-SAFE — if the diff base can't be resolved (first
   # push, force-push, shallow), or an infra path (.github/Makefile) changed, BOTH flags
-  # are true and nothing downstream is skipped. (paths-ignore already drops pure-docs runs.)
+  # are true and nothing downstream is skipped.
+  #
+  # This job is now the ONLY thing that skips docs-only work: the workflow-level
+  # `paths-ignore` was removed (see the `on:` comment) because it deadlocks required
+  # checks. A pure-docs change matches the `*.md | LICENSE` inert arm below, leaving both
+  # flags false, so every heavy leg skips — but each one still REPORTS, which is what a
+  # required status check needs.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -297,3 +311,35 @@ jobs:
 
       - name: repo behavioral tests (on real macOS)
         run: make test-repo
+
+  # ── the single required status check ─────────────────────────────────────────
+  # Branch rulesets should require THIS job and nothing else from this workflow.
+  #
+  # Why an aggregation gate rather than requiring the six jobs directly:
+  #   • the jobs above are conditional, and their names ("shell lint", "macos smoke", …)
+  #     are the ruleset's contract — renaming one silently drops a required check while
+  #     the ruleset still shows green, because a context that never reports is only
+  #     "pending", and a ruleset listing a context that no longer exists blocks forever;
+  #   • one stable name means adding or renaming a leg needs no ruleset edit.
+  #
+  # `if: always()` is essential: without it this job would itself be skipped whenever any
+  # dependency failed, and a skipped required check counts as PASSING — precisely
+  # inverting the gate. With `always()` it runs regardless and inspects the results.
+  #
+  # `skipped` is deliberately NOT a failure: the `changes` job legitimately skips the
+  # heavy legs for docs-only or core-only PRs, and that is the design.
+  ci-ok:
+    name: ci ok
+    if: always()
+    needs: [changes, shell, core-regression, verify-core, actionlint, macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Assert no required leg failed
+        run: |
+          echo '${{ toJSON(needs) }}'
+          if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}; then
+            echo "::error::a CI leg failed or was cancelled — see the jobs above"
+            exit 1
+          fi
+          echo "all CI legs passed or were legitimately skipped"
