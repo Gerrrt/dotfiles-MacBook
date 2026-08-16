@@ -4,9 +4,12 @@ name: auto-tag
 # changes. Delegates to the reusable workflow in dotfiles-core — one definition of the
 # version math + tagging (scripts/auto-tag.sh): PATCH-bump by default, idempotent (a
 # no-op when HEAD is already tagged vX.Y.Z), and it tags in CI so the second version
-# line (this repo's own tag) stops drifting from the Core it vendors. SHA-pinned to
-# the commit v4 pointed at when this was written (v4.10.0 — the same Core this repo
-# vendors, per core.lock); the trailing comment is what Renovate reads to bump it.
+# line (this repo's own tag) stops drifting from the Core it vendors. SHA-pinned to the
+# Core commit this repo vendors, per core.lock — stated as the invariant rather than a
+# version number, because naming one here dates the comment on every sync while
+# test/check-pins.sh only validates the trailing comment on the `uses:` line. That
+# trailing comment is what Renovate reads to bump it, and check-pins.sh asserts both it
+# and the SHA still equal core.lock.
 #
 # DELIBERATE DEVIATION from the reusable's documented caller shape, which is
 # `paths: ['core/**']`. That shape assumes the only thing worth releasing is a Core
@@ -56,4 +59,4 @@ concurrency:
 
 jobs:
   tag:
-    uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@cd4278eb998e204c6af8d1b6e468e611674a537e # v4.10.0
+    uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@a3e75b561baa4b395d9e7055c6745074c2381e76 # v4.12.0
