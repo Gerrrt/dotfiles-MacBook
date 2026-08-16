@@ -26,13 +26,13 @@ ZSH_FILES := zsh/zshenv zsh/zprofile zsh/zshrc os/macos.zsh
 
 .PHONY: help lint fmt fmt-check shellcheck syntax zsh-syntax check core-advisory \
         tools test test-repo test-all bench bootstrap bootstrap-dry doctor sync-core \
-        core-audit verify-core core-lock brew-check secrets config-check markdownlint
+        core-audit verify-core core-lock brew-check secrets config-check markdownlint pins-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-15s\033[0m %s\n",$$1,$$2}'
 
-lint: shellcheck fmt-check syntax zsh-syntax config-check markdownlint secrets ## Run all gating checks (shell + format + syntax + configs + markdown + secrets)
+lint: shellcheck fmt-check syntax zsh-syntax config-check markdownlint secrets pins-check ## Run all gating checks (shell + format + syntax + configs + markdown + secrets + core pins)
 
 shellcheck: ## Static analysis of repo-owned bash
 	@shellcheck $(SH_FILES)
@@ -85,6 +85,13 @@ core-advisory: ## Non-blocking shellcheck over vendored core/ (fixes land upstre
 
 core-audit: ## Gate the vendored Core subtree with its OWN audit (manifest/exec-bits/syntax/config drift a subtree pull can introduce)
 	@cd core && ./scripts/audit-core.sh --quiet
+
+# The THIRD reference to a Core commit. core-integrity and verify-core gate the subtree
+# and core.lock; nothing gated the workflow pins, so a sync could advance the tree while
+# the callers kept running the PREVIOUS Core's reusables — with every gate green. The
+# auto-tag caller holds `contents: write`, so that is not cosmetic.
+pins-check: ## Assert the reusable-workflow SHA pins equal core.lock's core_sha
+	@./test/check-pins.sh
 
 verify-core: ## Assert vendored core/ is byte-for-byte upstream @ the recorded subtree-split (catches hand-edits + orphans the dir-level manifest misses)
 	@./test/verify-core.sh

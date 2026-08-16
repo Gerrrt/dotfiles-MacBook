@@ -70,6 +70,12 @@ repos:
         language: system
         pass_filenames: false
         files: '\.(json|jsonc|toml)$'
+      - id: pins-check
+        name: workflow SHA pins match core.lock
+        entry: make pins-check
+        language: system
+        pass_filenames: false
+        files: (^\.github/workflows/|^core\.lock$)
       - id: markdownlint
         name: markdownlint (repo-owned markdown)
         entry: make markdownlint
