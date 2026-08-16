@@ -238,6 +238,13 @@ jobs:
       - name: Verify vendored core/ == upstream @ subtree-split
         run: make verify-core
 
+      # The third Core reference. verify-core proves the SUBTREE matches core.lock; this
+      # proves the reusable workflows this repo CALLS point at that same commit. Separate
+      # step because verify-core skips gracefully when upstream is unreachable, and this
+      # check is offline and must never skip.
+      - name: Workflow SHA pins match the vendored Core
+        run: make pins-check
+
   actionlint:
     name: actionlint
     runs-on: ubuntu-latest
