@@ -47,11 +47,12 @@ make verify-core # the vendored subtree is byte-for-byte upstream
 `pre-commit install` mirrors these at commit time. Each gate self-skips when its tool is
 missing, so `make lint` still works on a bare box — but CI has them all.
 
-> **Known issue:** `make test` and `make core-audit` currently **hang on macOS**, inside
-> the vendored `core/scripts/test-core.sh`. Tracked upstream as
-> [dotfiles-core#467](https://github.com/dotgibson/dotfiles-core/issues/467). Until it is
-> fixed, those two run in CI (Ubuntu) rather than locally; `make lint` and `make test-repo`
-> are the local gate.
+> **Be patient with these two.** `make test` and `make core-audit` each take roughly
+> **6 minutes** on macOS, and the atuin section goes near-silent for ~4 of them — about 25
+> lines of output, then the rest arrives at once. That looks exactly like a wedge; it isn't.
+> Don't cap them at 90s and conclude they hang (I did, twice, and filed a bogus upstream
+> issue for it). If you interrupt them mid-run, the EXIT trap may not fire and a stub
+> process can be left behind — check with `pgrep -f atverify`.
 
 ## Two lists that drift
 

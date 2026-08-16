@@ -38,8 +38,8 @@ $ ./bootstrap.sh --links-only --dry-run
 
 ## Gate output
 
-<!-- Where relevant. `make test` / `make core-audit` are known to hang on macOS
-     (dotfiles-core#467) — say so rather than waiting them out. -->
+<!-- Where relevant. Note `make test` and `make core-audit` each take ~6 minutes on
+     macOS and go near-silent partway through — that is normal, not a hang. -->
 
 ```console
 $ make lint
