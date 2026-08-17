@@ -809,6 +809,12 @@ optionally applies defaults and sets the login shell. Fail-closed flag parser
 | `--uninstall` | remove the symlinks |
 | `--dry-run`/`-n`, `--quiet`/`-q`, `--json` | preview / silence / machine-readable |
 
+Steps that must not abort the run (`mise install`, `macos/defaults.sh`, `chsh`, the tpm
+clone) are recorded rather than swallowed: a failure lists itself under the summary, sets
+`"ok": false` / `errors[]` in the `--json` object, and exits **3** — "ran, but degraded",
+distinct from `1` (couldn't run at all) and `2` (usage error). See the README's exit-code
+and `--json` tables for the full schema.
+
 `Makefile` is the dev surface (`make` with no target lists it): `make lint`
 (shellcheck + `fmt-check` + `bash -n` + `zsh -n`), `make test-repo` / `make test` /
 `make test-all` (this repo's behavioral tests + the vendored Core harness), `make
