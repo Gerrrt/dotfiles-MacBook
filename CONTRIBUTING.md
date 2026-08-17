@@ -1,6 +1,6 @@
 # Contributing to dotfiles-MacBook
 
-This is the **macOS OS-native layer** of a ten-repo system (Core → OS-native → Role), so
+This is the **macOS OS-native layer** of an eleven-repo system (Core → OS-native → Role), so
 contributing here is mostly a boundary question: *does this change belong in this repo at
 all?* Get that right and the rest is mechanical.
 

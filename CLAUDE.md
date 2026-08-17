@@ -6,7 +6,7 @@ rules (the load order, the "is it Core?" test, the manifest contract) see
 
 ## What this repo is
 
-`dotfiles-MacBook` is the **OS-native layer for macOS** in a **ten-repo dotfiles system** built on a three-layer
+`dotfiles-MacBook` is the **OS-native layer for macOS** in a **eleven-repo dotfiles system** built on a three-layer
 model (Core → OS-native → Role). Its own lineage — built directly on **Homebrew**, not stamped from the Fedora template — and it also owns the macOS desktop tooling (aerospace, sketchybar, karabiner, ghostty). Packages live in the **`Brewfile`** (`brew bundle`), not `install/packages.txt`; Core targets macOS's stock **bash 3.2** in places.
 
 ## The rule that bites
