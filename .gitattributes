@@ -1,49 +1,40 @@
-# .gitattributes — line-ending policy + vendored-subtree marking for dotfiles-MacBook.
+# .gitattributes — line-ending policy for dotfiles-core.
 # ──────────────────────────────────────────────────────────────────────────────
-# This repo is macOS-only, so the CRLF-shebang breakage that dotfiles-core guards
-# against is unlikely here — but it VENDORS Core under core/ (a git subtree whose
-# scripts assume LF), and a consistent LF policy is cheap insurance for the repo-owned
-# shell entry points (zsh/zshenv, zsh/zprofile, zsh/zshrc — sourced, so a stray \r would
-# corrupt values) and bootstrap.sh. .editorconfig sets eol=lf but only guides EDITORS;
-# this governs what git writes on checkout/commit. Mirrors core/.gitattributes.
+# .editorconfig sets `end_of_line = lf`, but that only guides EDITORS — it does
+# not govern what git writes on checkout/commit. Core is vendored (git subtree)
+# into the OS repos, and may itself be edited on Windows, where git can introduce
+# CRLF. If a `.sh`, `bin/clip`, or `bin/clip-paste` lands on disk with CRLF, its
+# shebang becomes `…/env bash\r` and the interpreter dies with "bad interpreter:
+# No such file or directory" — a class of breakage the manifest/exec-bit/shellcheck
+# audit cannot see (the file is valid text). This makes LF a hard guarantee at the
+# git layer, for every consumer.
+#
+# `text=auto eol=lf`: git auto-detects text vs binary, normalizes text to LF in the
+# repo, and checks it out as LF on every OS (including Windows). The explicit blocks
+# below pin the load-bearing executable/config classes so detection is never in
+# play for them. Binaries are marked so git never touches their bytes.
+# Default: normalize all detected-text files to LF in the index and on checkout.
 * text=auto eol=lf
-
 # ── Executable + sourced shell — MUST stay LF or the shebang/sourcing breaks ───
-*.sh         text eol=lf
-*.zsh        text eol=lf
-zsh/zshenv   text eol=lf
-zsh/zprofile text eol=lf
-zsh/zshrc    text eol=lf
-
-# ── Config / data ─────────────────────────────────────────────────────────────
-*.toml       text eol=lf
-*.lock       text eol=lf
-*.conf       text eol=lf
-*.gitconfig  text eol=lf
-*.md         text eol=lf
-*.yml        text eol=lf
-*.yaml       text eol=lf
-Brewfile     text eol=lf
-# Linguist reads the Brewfile's Ruby DSL as Ruby — all 10.6 KB of it, which made "Ruby"
-# the second-largest language on a repo that is Shell. That also caused CodeQL's default
-# setup to enable a Ruby analysis, which FAILED on main before self-correcting to
-# actions-only. Not a source file; don't count it and don't offer it for analysis.
-Brewfile     linguist-detectable=false
-Makefile     text eol=lf
-
-# ── Vendored Core subtree — authored upstream in dotfiles-core ─────────────────
-# Mark it linguist-vendored so GitHub's language stats ignore it and PR diffs collapse
-# it by default (it's not reviewed here — it's reviewed + gated in dotfiles-core, and
-# `verify-core` asserts it's byte-for-byte upstream). Keeps this repo's diffs focused on
-# the macOS overlay we actually own.
-core/** linguist-vendored
-
+*.sh        text eol=lf
+*.zsh       text eol=lf
+bin/clip    text eol=lf
+bin/clip-paste text eol=lf
+# ── Config / data that fans out to every OS repo ──────────────────────────────
+*.lua       text eol=lf
+*.toml      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.conf      text eol=lf
+*.gitconfig text eol=lf
+*.md        text eol=lf
+Makefile    text eol=lf
 # ── Binaries (defensive): never normalize, never diff as text ─────────────────
-*.png  binary
-*.jpg  binary
-*.jpeg binary
-*.gif  binary
-*.ico  binary
-*.pdf  binary
-*.gz   binary
-*.zip  binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.gz        binary
+*.zip       binary

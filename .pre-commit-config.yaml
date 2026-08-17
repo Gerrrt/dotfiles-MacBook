@@ -1,93 +1,78 @@
-# Local commit-time lint gate. One-time setup:  pre-commit install
-# Mirrors the CI checks (see .github/workflows/ci.yml) so failures surface before push.
+# .pre-commit-config.yaml — author-time guardrails for dotfiles-core.
+# Mirrors the CI checks (.github/workflows/ci.yml) so drift is caught locally,
+# before it is committed and subtree-synced into the eight OS repos.
 #
-# core/ is a vendored git-subtree from dotfiles-core — excluded globally so hooks
-# never rewrite vendored files (that would diverge the subtree). It is linted in
-# dotfiles-core's own CI. See README "Development".
-exclude: "^core/"
+#   one-time:  pip install pre-commit && pre-commit install
+#   manual:    pre-commit run --all-files
+#
+# zsh modules are intentionally excluded from shellcheck/shfmt (shellcheck has no
+# zsh mode); scripts/audit-core.sh runs `zsh -n` on them instead. Each hook scopes
+# itself via `files:`, so there is no global exclude (a global one would also
+# suppress the luacheck hook below).
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        exclude: '\.md$'
       - id: end-of-file-fixer
-      - id: mixed-line-ending
-        args: [--fix=lf]
       - id: check-merge-conflict
-      - id: check-executables-have-shebangs
-      - id: check-shebang-scripts-are-executable
-      - id: check-yaml
-      # The macOS desktop layer is JSON/TOML and nothing checked it. `check-json` is
-      # strict, so the JSONC files (comments are legal there) are excluded and covered by
-      # `make config-check` below, which understands both dialects.
-      - id: check-json
-        exclude: '\.jsonc$'
+      # Parse-check the config/data files that fan out to all eight OS repos: a broken
+      # starship.toml / mise config.toml / workflow yaml is valid text (shellcheck
+      # & zsh -n never see it) but dead at runtime for every consumer. Mirrors the
+      # toml/yaml section in scripts/audit-core.sh.
       - id: check-toml
+      - id: check-yaml
+      # check-json only matches *.json (not the *.jsonc config files) — it guards
+      # nvim/lazy-lock.json, the reproducible-plugin pin set. Mirrors the json arm
+      # in scripts/audit-core.sh.
+      - id: check-json
+      - id: check-executables-have-shebangs
+      # The bug this whole effort started from: a script with a shebang that
+      # isn't executable. Catches exec-bit regressions at commit time.
+      - id: check-shebang-scripts-are-executable
 
   - repo: https://github.com/koalaman/shellcheck-precommit
-    rev: v0.10.0
+    rev: v0.11.0
     hooks:
       - id: shellcheck
+        args: ["-x"]
+        files: '(\.sh|bin/clip|bin/clip-paste)$'
 
-  - repo: https://github.com/scop/pre-commit-shfmt
-    rev: v3.10.0-2
+  # Markdown is the deliverable on this public showcase repo and the one file class
+  # shellcheck/zsh -n/toml-yaml never inspect — so lint it at author time too.
+  # Shares .markdownlint.jsonc with the audit's markdown section (one rule config).
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.23.2
     hooks:
-      - id: shfmt
-        args: [-i, "2", -d]
+      - id: markdownlint-cli2
 
-  # ── Mirror the remaining CI gates so "passes pre-commit" == "passes CI" ──────
-  # CI also runs actionlint and `zsh -n`; without these two the local gate was a
-  # subset and a workflow/zsh break could pass pre-commit yet fail CI. These use
-  # the system binaries the Brewfile already installs (actionlint, zsh) — there's
-  # no pinned, toolchain-free pre-commit-managed binary for either.
+  # Secret scanning — Core ships 1Password helpers (zsh/50-op.zsh), a git-identity
+  # template, and fans out to 9 PUBLIC repos, so a leaked token here amplifies
+  # N-way. gitleaks at author time catches it in the commit diff before it lands;
+  # the audit's "secrets" section (scripts/audit-core.sh) is the CI mirror. Pinned
+  # rev kept in step with GITLEAKS_VERSION by the audit's version-consistency gate.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  # NB: shfmt is intentionally NOT enforced — the scripts here use a deliberate
+  # compact one-liner style that shfmt would expand (see scripts/audit-core.sh).
+  # luacheck is NOT a standalone hook either: it discovers .luacheckrc by
+  # searching up from the CWD, so run from repo root it misses nvim/.luacheckrc
+  # and floods false "undefined vim" warnings. The audit-core hook below runs it
+  # correctly (from inside nvim/) — one correct invocation, no duplication.
+
+  # The contract check — manifest <-> filesystem drift + exec-bit invariants +
+  # shellcheck + luacheck (run correctly). Local hook so it always runs the
+  # in-repo script (single source of truth, identical to CI).
   - repo: local
     hooks:
-      - id: actionlint
-        name: actionlint (GitHub Actions workflows)
-        entry: actionlint
-        language: system
-        files: ^\.github/workflows/.*\.ya?ml$
-      - id: zsh-syntax
-        name: zsh -n (repo-owned zsh modules)
-        entry: make zsh-syntax
-        language: system
+      - id: audit-core
+        name: Core manifest/exec-bit audit
+        entry: ./scripts/audit-core.sh --quiet
+        language: script
         pass_filenames: false
-        files: (\.zsh$|^zsh/)
-      # Secret scan over the REPO-OWNED tree. Core's audit runs gitleaks over core/ only,
-      # so Brewfile, os/, zsh/, ssh/config, sketchybar/ and macos/defaults.sh were never
-      # scanned by anything — GitHub push protection was the only net, and it only fires
-      # after you try to push. Unfiltered by `files:` on purpose: a secret can land in any
-      # file, so this runs on every commit.
-      - id: gitleaks
-        name: gitleaks (secret scan)
-        entry: make secrets
-        language: system
-        pass_filenames: false
-      - id: config-check
-        name: structured config parse (json/jsonc/toml)
-        entry: make config-check
-        language: system
-        pass_filenames: false
-        files: '\.(json|jsonc|toml)$'
-      - id: pins-check
-        name: workflow SHA pins match core.lock
-        entry: make pins-check
-        language: system
-        pass_filenames: false
-        files: (^\.github/workflows/|^core\.lock$)
-      - id: markdownlint
-        name: markdownlint (repo-owned markdown)
-        entry: make markdownlint
-        language: system
-        pass_filenames: false
-        files: '\.md$'
-      # Behavioral gate for the repo-owned scripts (bootstrap.sh, the zsh loader,
-      # macos/defaults.sh, the bootstrap completion). Hermetic + fast; mirrors the
-      # CI "repo behavioral tests" step so "passes pre-commit" == "passes CI".
-      - id: test-repo
-        name: repo behavioral tests
-        entry: make test-repo
-        language: system
-        pass_filenames: false
-        files: (^bootstrap\.sh$|^macos/defaults\.sh$|^zsh/|^os/|^completions/|^test/)
+        always_run: true
