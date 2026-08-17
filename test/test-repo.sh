@@ -115,8 +115,10 @@ assert_eq "dry-run creates zero files in HOME" 0 "$created"
 # green. This exercises a real apply against a sandboxed HOME and asserts the links land
 # (pointing INTO the repo), seeds are real files, a re-apply is idempotent, and the
 # apply→uninstall round-trip is clean. Hermetic: pre-seed tpm so wire_links skips the
-# network clone, and stub `mise` so the post-link `mise install` is an instant no-op
-# whether or not real mise is on PATH. Runs on Linux CI too (BOOTSTRAP_ALLOW_NON_DARWIN).
+# network clone (and so the #133 tpm check below finds it), and stub `mise` — belt and
+# braces, since --links-only no longer runs `mise install` at all. Note the stub alone was
+# never enough on macOS: brew_shellenv PREPENDS /opt/homebrew/bin, shadowing it.
+# Runs on Linux CI too (BOOTSTRAP_ALLOW_NON_DARWIN).
 section "bootstrap.sh — real apply creates links, idempotent, round-trips (B8)"
 
 ahome="$(mktemp -d)"
@@ -148,6 +150,90 @@ assert_contains "re-apply reports an already-linked file" "$OUT" "already linked
 HOME="$ahome" BOOTSTRAP_ALLOW_NON_DARWIN=1 NO_COLOR=1 bash "$REPO/bootstrap.sh" --uninstall >/dev/null 2>&1
 if [[ -L "$ahome/.zshenv" ]]; then no "apply→uninstall round-trip removes the links" "still a link"; else ok "apply→uninstall round-trip removes the links"; fi
 rm -rf "$ahome" "$abin"
+
+# ── B1c. bootstrap.sh: a degraded run REPORTS itself (#133) ───────────────────
+# Steps that must not abort the run (mise, defaults.sh, chsh, tpm) were each written
+# `|| info "…"` and forgotten: the run still closed with "bootstrap complete" and exit 0,
+# so a box that got none of its runtimes looked exactly like a clean one — to the operator
+# and to anything parsing --json. These assert the three halves of the fix: the ledger
+# reaches --json, a failure changes the exit code, and warnings do NOT.
+section "bootstrap.sh — degraded runs report themselves (#133)"
+
+# run_bootstrap merges 2>&1, which cannot express the fd-3 discipline (`exec 3>&1 1>&2`):
+# under --json the ONLY thing on real stdout is the summary object. Keep them separate.
+JSON_OUT="" ERR_OUT=""
+run_bootstrap_json() { # run_bootstrap_json <args...> → JSON_OUT, ERR_OUT, RC
+  local home errf
+  home="$(mktemp -d)"
+  errf="$(mktemp)"
+  SANDBOX="$home"
+  JSON_OUT="$(HOME="$home" BOOTSTRAP_ALLOW_NON_DARWIN=1 NO_COLOR=1 bash "$REPO/bootstrap.sh" "$@" 2>"$errf")"
+  RC=$?
+  ERR_OUT="$(cat "$errf")"
+  rm -f "$errf"
+}
+
+run_bootstrap_json --links-only --dry-run --json
+assert_eq "clean --json run exits 0" 0 "$RC"
+assert_eq "--json puts exactly ONE line on real stdout" 1 "$(printf '%s\n' "$JSON_OUT" | wc -l | tr -d ' ')"
+assert_contains "--json reports ok:true on a clean run" "$JSON_OUT" '"ok":true'
+assert_contains "--json carries an errors[] channel" "$JSON_OUT" '"errors":[]'
+assert_contains "--json carries a warnings[] channel" "$JSON_OUT" '"warnings":'
+# The human body must be on stderr, never mixed into the object automation parses.
+assert_not_contains "--json keeps the human summary off stdout" "$JSON_OUT" "linked ·"
+assert_contains "--json still prints the human summary on stderr" "$ERR_OUT" "linked ·"
+if command -v python3 >/dev/null 2>&1; then
+  if printf '%s' "$JSON_OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then
+    ok "--json emits parseable JSON"
+  else
+    no "--json emits parseable JSON" "$JSON_OUT"
+  fi
+else
+  skipt "--json emits parseable JSON (no python3)"
+fi
+# A warning (a tool not on PATH yet — the norm on Linux CI, where nothing is installed)
+# must NOT degrade the run. On a fully-provisioned Mac there are no warnings and this is
+# vacuously true, so assert the implication rather than the presence.
+case "$JSON_OUT" in
+*'"warnings":[]'*) skipt "warnings do not change the exit code (none raised here)" ;;
+*) assert_eq "a run with warnings but no errors still exits 0" 0 "$RC" ;;
+esac
+[[ -n "$SANDBOX" ]] && rm -rf "$SANDBOX"
+
+# A FAILED step must exit 3 and say so. Injected via the issue's own scenario: tpm is
+# cloned over https by wire_links, so GIT_ALLOW_PROTOCOL=file makes that clone fail the
+# way a proxy does — deterministic, offline, and no stub can be shadowed by brew_shellenv.
+# The sandbox HOME deliberately does NOT pre-seed tpm, so the clone is actually attempted.
+run_bootstrap_json_nogit() {
+  local home errf
+  home="$(mktemp -d)"
+  errf="$(mktemp)"
+  SANDBOX="$home"
+  JSON_OUT="$(HOME="$home" GIT_ALLOW_PROTOCOL=file BOOTSTRAP_ALLOW_NON_DARWIN=1 NO_COLOR=1 \
+    bash "$REPO/bootstrap.sh" "$@" 2>"$errf")"
+  RC=$?
+  ERR_OUT="$(cat "$errf")"
+  rm -f "$errf"
+}
+run_bootstrap_json_nogit --no-brew --links-only --json
+assert_eq "a failed step exits 3 (partial success), not 0" 3 "$RC"
+assert_contains "the failure names tpm" "$ERR_OUT" "tpm"
+assert_contains "a degraded run does NOT claim to be complete" "$ERR_OUT" "failed step(s)"
+assert_not_contains "a degraded run does NOT print the clean closing line" "$ERR_OUT" "bootstrap complete"
+assert_contains "--json reports ok:false when a step failed" "$JSON_OUT" '"ok":false'
+assert_contains "--json lists the failure in errors[]" "$JSON_OUT" "tpm"
+# The object must STILL be emitted on a degraded run — reading why is the whole point.
+assert_eq "--json still emits exactly one line when degraded" 1 "$(printf '%s\n' "$JSON_OUT" | wc -l | tr -d ' ')"
+[[ -n "$SANDBOX" ]] && rm -rf "$SANDBOX"
+
+# --links-only promises "no installs" in both usage() and the README, but the mise step
+# sat outside the provision branch and ran anyway — which also meant `make test-repo`
+# drove a real `mise install` of every pinned runtime on any dev box with mise on PATH.
+run_bootstrap piped --links-only --dry-run
+assert_not_contains "--links-only does not run mise install" "$OUT" "installing mise-managed tools"
+[[ -n "$SANDBOX" ]] && rm -rf "$SANDBOX"
+
+assert_contains "--help documents the exit codes" "$(bash "$REPO/bootstrap.sh" --help 2>&1)" "3  ran, but one or more steps FAILED"
 
 # ── B2. bootstrap.sh --uninstall: reverse links + restore backups (B4) ─────────
 section "bootstrap.sh — uninstall (reverse symlinks, restore backups, skip foreign)"
@@ -190,6 +276,86 @@ OUT="$(HOME="$shome" BOOTSTRAP_ALLOW_NON_DARWIN=1 NO_COLOR=1 bash "$REPO/bootstr
 assert_eq "uninstall does NOT overwrite a real file with a stale backup" "USER REAL FILE" "$(cat "$scfg/.zshrc" 2>/dev/null)"
 assert_contains "uninstall reports it skipped the real file" "$OUT" "real file present"
 rm -rf "$shome"
+
+# --uninstall --json must emit the object too. It did not: uninstall() is reached from a
+# short-circuit whose `exit 0` sat ABOVE the emitter at the foot of bootstrap.sh, so the
+# one path that fills `removed`/`restored` was the one path that printed nothing. Fixed by
+# factoring the emitter into emit_json() and calling it from BOTH exits — these assertions
+# pin that down, so re-inlining it (or adding a third early exit) fails here.
+jhome="$(mktemp -d)"
+jcfg="$jhome/.config/zsh"
+mkdir -p "$jcfg"
+ln -s "$REPO/zsh/zshrc" "$jcfg/.zshrc"                           # ours — makes removed >= 1
+printf 'ORIGINAL\n' >"$jcfg/.zshrc.pre-dotfiles.20250101-120000" # a backup — makes restored >= 1
+jerr="$(mktemp)"
+JSON_OUT="$(HOME="$jhome" BOOTSTRAP_ALLOW_NON_DARWIN=1 NO_COLOR=1 \
+  bash "$REPO/bootstrap.sh" --uninstall --json 2>"$jerr")"
+RC=$?
+ERR_OUT="$(cat "$jerr")"
+rm -f "$jerr"
+assert_eq "uninstall --json exits 0" 0 "$RC"
+assert_eq "uninstall --json puts exactly ONE line on real stdout" 1 "$(printf '%s\n' "$JSON_OUT" | wc -l | tr -d ' ')"
+# The two counters that ONLY an uninstall fills — the reason the object has to exist here.
+assert_contains "uninstall --json reports what it removed" "$JSON_OUT" '"removed":1'
+assert_contains "uninstall --json reports what it restored" "$JSON_OUT" '"restored":1'
+assert_contains "uninstall --json carries the same ok verdict key" "$JSON_OUT" '"ok":true'
+# The fd discipline (`exec 3>&1 1>&2`) must hold on this path too: human body on stderr.
+assert_not_contains "uninstall --json keeps the human summary off stdout" "$JSON_OUT" "removed ·"
+assert_contains "uninstall --json still prints the human summary on stderr" "$ERR_OUT" "removed ·"
+if command -v python3 >/dev/null 2>&1; then
+  if printf '%s' "$JSON_OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then
+    ok "uninstall --json emits parseable JSON"
+  else
+    no "uninstall --json emits parseable JSON" "$JSON_OUT"
+  fi
+else
+  skipt "uninstall --json emits parseable JSON (no python3)"
+fi
+# --dry-run must preview, not mutate: same object, dry_run:true, and the link still there.
+JSON_OUT="$(HOME="$jhome" BOOTSTRAP_ALLOW_NON_DARWIN=1 NO_COLOR=1 \
+  bash "$REPO/bootstrap.sh" --uninstall --dry-run --json 2>/dev/null)"
+assert_contains "uninstall --dry-run --json marks itself dry_run:true" "$JSON_OUT" '"dry_run":true'
+rm -rf "$jhome"
+
+# A dest that will NOT unlink must be recorded and stepped over, not fatal. `rm -f` and
+# `mv` were bare under `set -euo pipefail`, so an unwritable parent aborted the script
+# mid-uninstall: no summary, no --json object, a half-reversed HOME and no record of which
+# half. Now it's a fail_note — the other ~40 dests still come out, errors[] names the one
+# that didn't, and the run exits 3 like any other degraded run.
+#
+# Injected with a read-only parent dir (chmod a-w), which makes `rm` fail with EACCES for
+# real rather than via a stub. root ignores the write bit, so skip there.
+if [[ "$(id -u)" -eq 0 ]]; then
+  skipt "uninstall records an unremovable dest instead of aborting (running as root)"
+else
+  fhome="$(mktemp -d)"
+  fcfg="$fhome/.config/zsh"
+  mkdir -p "$fcfg" "$fhome/.config/git"
+  ln -s "$REPO/zsh/zshrc" "$fcfg/.zshrc"               # ours, but about to be unremovable
+  ln -s "$REPO/os/macos.gitconfig" "$fhome/.gitconfig" # ours, in a WRITABLE dir → must still come out
+  chmod a-w "$fcfg"                                    # rm -f "$fcfg/.zshrc" now fails
+  ferr="$(mktemp)"
+  JSON_OUT="$(HOME="$fhome" BOOTSTRAP_ALLOW_NON_DARWIN=1 NO_COLOR=1 \
+    bash "$REPO/bootstrap.sh" --uninstall --json 2>"$ferr")"
+  RC=$?
+  ERR_OUT="$(cat "$ferr")"
+  rm -f "$ferr"
+  chmod u+w "$fcfg" # restore before cleanup, or rm -rf can't recurse
+  assert_eq "an unremovable dest exits 3 (partial reversal), not 0" 3 "$RC"
+  assert_contains "the failure names the dest that would not unlink" "$ERR_OUT" ".zshrc"
+  assert_contains "a partial uninstall does NOT claim to be clean" "$ERR_OUT" "failed step(s)"
+  assert_contains "uninstall --json reports ok:false when a dest resisted" "$JSON_OUT" '"ok":false'
+  assert_contains "uninstall --json lists the stuck dest in errors[]" "$JSON_OUT" "still wired to this repo"
+  # The whole point of continuing: the run must not abort at the stuck dest.
+  assert_eq "the object is still emitted on a partial uninstall" 1 "$(printf '%s\n' "$JSON_OUT" | wc -l | tr -d ' ')"
+  if [[ -L "$fhome/.gitconfig" ]]; then
+    no "uninstall keeps going past a stuck dest" ".gitconfig in the writable dir was never unlinked"
+  else
+    ok "uninstall keeps going past a stuck dest"
+  fi
+  assert_contains "the stuck dest is NOT counted as removed" "$JSON_OUT" '"removed":1'
+  rm -rf "$fhome"
+fi
 
 # ── C. zsh loader (zsh/zshrc) actually executes ───────────────────────────────
 # `make zsh-syntax` only parses (zsh -n). This sources the real loader against a

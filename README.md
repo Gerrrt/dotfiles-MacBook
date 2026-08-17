@@ -138,6 +138,48 @@ Module groups are `zsh nvim tmux git prompt tools desktop` — the first six com
 from Core, `desktop` is this layer's own (ghostty, fastfetch, aerospace,
 sketchybar, karabiner).
 
+#### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | clean run |
+| `1` | could not run (not macOS, missing `core/`, no Command Line Tools) |
+| `2` | usage error (unknown flag, bad `--only`/`--skip` selector) |
+| `3` | ran, but one or more steps **failed** — the box is degraded |
+| `130` | interrupted (Ctrl-C); bootstrap is idempotent, just re-run |
+
+Exit `3` is the one to watch in automation. Some steps must not abort the run —
+`mise install`, `macos/defaults.sh`, `chsh`, the tpm clone — so a failure there
+leaves you installed but *degraded* (no runtimes, no tmux plugins). The closing
+line says so, the failed steps are listed under the summary, and the exit code
+distinguishes it from both a clean run and a bootstrap that never started.
+
+#### `--json` output
+
+One object on stdout, nothing else (the human log goes to stderr):
+
+```json
+{
+  "dry_run": false,
+  "ok": false,
+  "linked": 40, "backed_up": 0, "seeded": 2, "skipped": 0,
+  "removed": 0, "restored": 0,
+  "tools": { "zsh": true, "starship": true, "mise": true, "fzf": true,
+             "nvim": true, "tmux": true, "git": true },
+  "errors": ["mise install failed — …; re-run: mise install"],
+  "warnings": ["not yet on PATH: starship — open a new shell, …"]
+}
+```
+
+`ok` is `true` iff `errors` is empty, and mirrors exit `0` vs exit `3` — check it
+alone if you want one field. `warnings` are notices that do **not** degrade the
+run (a tool that just needs a fresh shell), so they never clear `ok`. `tools`
+reports whether each headline binary resolved on `PATH` at the end of the run.
+
+`--uninstall --json` emits the same object, and is the only mode that fills
+`removed` / `restored`. It reports `"tools": {}` — an uninstall never probes
+`PATH`, so an empty object there means "not measured", not "nothing installed".
+
 **If something goes wrong, `--uninstall` is the way back.** It removes only
 symlinks that point into this repo — never a real file, never a foreign link —
 and restores the most recent `.pre-dotfiles.*` backup it made. Pair it with

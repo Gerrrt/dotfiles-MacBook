@@ -55,6 +55,14 @@ plan without touching your home directory. `--quiet` suppresses section headers
 and the per-file "already linked" lines, so a re-run prints only what actually
 changed — handy once you're set up and just re-syncing. `--uninstall --dry-run`
 previews exactly what an uninstall would remove and restore, changing nothing.
+
+Exit codes:
+    0  clean run
+    1  could not run (not macOS, missing core/, no Command Line Tools)
+    2  usage error (unknown flag, bad --only/--skip selector)
+    3  ran, but one or more steps FAILED — the box is degraded; see the summary
+       (under --uninstall: a dest would not unlink, so it is still wired to the repo)
+  130  interrupted (Ctrl-C); bootstrap is idempotent, just re-run
 EOF
 }
 
@@ -187,7 +195,8 @@ if ((SKIP_SEEN)); then blib_select --skip "$SKIP_RAW"; fi
 # B7: in --json mode the ONLY thing on stdout must be the final summary object, so route
 # the entire human body (section headers, per-file lines, AND any subprocess output like
 # brew bundle) to stderr by pointing fd 1 there, saving the real stdout on fd 3. The JSON
-# is printed to >&3 at the very end. No effect outside --json.
+# is printed to >&3 by emit_json() on whichever exit path the run takes (normal end of
+# run, or the --uninstall short-circuit). No effect outside --json.
 if ((JSON)); then exec 3>&1 1>&2; fi
 # Under --quiet, say() (section headers) and noop() (idempotent "already linked / present"
 # confirmations) fall silent, so a re-run prints only the CHANGES (info: linked/backed
@@ -252,15 +261,117 @@ n_seeded=0
 n_removed=0  # --uninstall: Core symlinks removed
 n_restored=0 # --uninstall: backups restored over the removed link
 
+# Failure/warning ledger (#133). A bootstrap is full of steps that must NOT abort the
+# run — a rate-limited registry, a runtime that won't build — so each was written
+# `|| info "…"` and then FORGOTTEN: the run still closed with "bootstrap complete" and
+# exit 0, leaving a box that got none of its runtimes indistinguishable from a good one,
+# to the operator and to anything parsing --json alike. These two arrays are the record.
+#
+# ERROR   = a step that was supposed to do something and didn't (mise, defaults.sh,
+#           chsh, tpm). Non-empty ⇒ the closing line says so and we exit 3.
+# WARNING = a notice that does NOT make the run degraded (a tool not on PATH *yet*
+#           because you need a new shell). Never affects the exit code.
+#
+# This implements the intent documented upstream at core/lib/bootstrap-lib.sh:775-800
+# (blib_note_fail / blib_failures_report) in bootstrap's own idiom: that API models
+# failures only — there is no warnings channel — and prints in the blib_* palette
+# rather than err()'s glyph, which mid-run reads as two different programs. Same
+# shape as the n_* counters folding in BLIB_* tallies below.
+#
+# Both recorders must END on a zero status (err/info return 0) or a call in statement
+# position would trip `set -e`.
+FAILURES=()
+WARNINGS=()
+fail_note() { # fail_note <message>  → record a degraded step; makes the run exit 3
+  FAILURES+=("$1")
+  err "$1"
+}
+warn_note() { # warn_note <message>  → record a non-fatal notice; exit code unchanged
+  WARNINGS+=("$1")
+  info "$1"
+}
+
+# JSON string/array serialisers for the --json ledger. Pure parameter expansion (bash
+# 3.2-safe, no subprocess) — there is deliberately no jq dependency on a fresh box.
+# The messages are ours, but they interpolate PATHS (`chsh -s $brew_zsh`), so escaping
+# is what keeps a `\` or `"` in a path from emitting invalid JSON.
+json_escape() { # json_escape <string>  → the string, safe inside a JSON "…" literal
+  local s=$1
+  s=${s//\\/\\\\} # backslash FIRST, or it would re-escape the escapes added below
+  s=${s//\"/\\\"}
+  printf '%s' "$s"
+}
+json_array() { # json_array <item...>  → ["a","b"], or [] when given nothing
+  local out="" item
+  for item in "$@"; do out="${out:+$out,}\"$(json_escape "$item")\""; done
+  printf '[%s]' "$out"
+}
+
+# emit_json — B7: the machine-readable run summary on the REAL stdout (fd 3, saved by the
+# `exec 3>&1 1>&2` above before the body redirect). Provisioning automation parses what
+# changed, which headline tools landed on PATH, and — since #133 — whether anything
+# actually FAILED, instead of scraping human output. Hand-built (no jq dependency on a
+# fresh box); the string/array values go through json_escape so a `"` or `\` in a path
+# can't emit a broken object.
+#
+# `ok` is the one-key verdict: true iff `errors` is empty. `warnings` are notices that do
+# NOT degrade the run (a tool that just needs a new shell), so they never clear `ok`.
+#
+# A FUNCTION, not the trailing block it used to be, because this script has more than one
+# way to end: --uninstall short-circuits the install path with its own `exit 0`, which sat
+# ABOVE the old inline emitter and so produced no object at all — even though n_removed /
+# n_restored are the two keys only an uninstall ever fills. Every exit path that has run
+# far enough to have a tally now calls this first; keep it that way when adding another.
+#
+# The --json test lives HERE rather than at the call sites for the same reason: the defect
+# was a caller forgetting the emitter, so a new exit path should only have to remember one
+# word. Outside --json this is a no-op (and fd 3 doesn't even exist).
+emit_json() {
+  ((JSON)) || return 0
+  # Leading underscores: `ok` is also a function name in this file (the green-glyph
+  # printer), and a local shadowing it would read as a bug to the next person even
+  # though bash keeps variables and functions in separate namespaces.
+  local _dry=false _ok=true
+  ((DRY)) && _dry=true
+  ((${#FAILURES[@]})) && _ok=false
+  # TOOLS_JSON is empty until verify_tools runs, which the uninstall path never does —
+  # `"tools":{}` there is correct and means "no probe was taken", not "nothing present".
+  printf '{"dry_run":%s,"ok":%s,"linked":%d,"backed_up":%d,"seeded":%d,"skipped":%d,"removed":%d,"restored":%d,"tools":{%s},"errors":%s,"warnings":%s}\n' \
+    "$_dry" "$_ok" "$n_linked" "$n_backed" "$n_seeded" "$n_skipped" "$n_removed" "$n_restored" \
+    "$TOOLS_JSON" \
+    "$(json_array "${FAILURES[@]+"${FAILURES[@]}"}")" \
+    "$(json_array "${WARNINGS[@]+"${WARNINGS[@]}"}")" >&3
+}
+
 # print_summary — the run tally, factored out so the INT/TERM trap can show what was
 # already done if you Ctrl-C mid-run (a long brew bundle, say). Without this, an
 # interrupt left you with no record of the partial state and no reminder that re-running
 # is safe. `$1` is an optional headline (e.g. "interrupted").
+
+# print_ledger — re-list the WARNINGS/FAILURES ledger under a tally so the failures aren't
+# scrolled off above a long brew bundle (or above 40 lines of uninstall). Shared by
+# print_summary and uninstall's own summary: both close a run, so both owe the same recap.
+#
+# `"${a[@]+"${a[@]}"}"`: on bash 3.2 under `set -u`, expanding an EMPTY array is an
+# "unbound variable" error — the count guard makes it non-empty here, but keep the idiom
+# so a later edit that moves these lines can't reintroduce the crash.
+print_ledger() {
+  if ((${#WARNINGS[@]})); then
+    printf '  %s%s%s %d warning(s):\n' "$c_y" "$G_INFO" "$c_0" "${#WARNINGS[@]}"
+    printf '      - %s\n' "${WARNINGS[@]+"${WARNINGS[@]}"}"
+  fi
+  if ((${#FAILURES[@]})); then
+    printf '  %s%s%s %d step(s) did not complete:\n' "$c_r" "$G_ERR" "$c_0" "${#FAILURES[@]}" >&2
+    printf '      - %s\n' "${FAILURES[@]+"${FAILURES[@]}"}" >&2
+  fi
+}
+
 print_summary() {
   # Always prints (bypasses the --quiet say() gate via a direct printf) — the tally is
   # the whole point of a quiet run, so it must never be suppressed.
   printf '%s==>%s %s\n' "$c_b" "$c_0" "${1:-summary}"
   ok "$n_linked linked · $n_backed backed up · $n_seeded seeded · $n_skipped skipped"
+  print_ledger
 }
 
 # Graceful interrupt: report the partial run + reassure that bootstrap is idempotent
@@ -555,15 +666,33 @@ provision() {
   fi
 }
 
-# verify_tools — after a provision, confirm the headline tools actually landed on
-# PATH so a half-finished bundle is reported, not silently assumed-good. Read-only.
+# verify_tools — confirm the headline tools actually landed on PATH, so a half-finished
+# bundle is reported instead of silently assumed-good. Read-only (`command -v` probes).
+#
+# Called at the END of the run (#133). It used to run immediately after provision() —
+# BEFORE wire_links and before `mise install` — so on every fresh box it reported
+# everything mise provides as "not yet on PATH". A hint that always cries wolf is a hint
+# you learn to ignore, which is why it moved to just before the summary.
+#
+# Publishes TOOLS_JSON so the --json emitter serialises THIS probe instead of repeating
+# the loop; the human line and the machine object then cannot drift apart.
+TOOLS_JSON=""
 verify_tools() {
-  local missing=() t
+  local missing=() t present
+  TOOLS_JSON=""
   for t in zsh starship mise fzf nvim tmux git; do
-    command -v "$t" >/dev/null 2>&1 || missing+=("$t")
+    if command -v "$t" >/dev/null 2>&1; then
+      present=true
+    else
+      present=false
+      missing+=("$t")
+    fi
+    TOOLS_JSON="${TOOLS_JSON:+$TOOLS_JSON,}\"$t\":$present"
   done
   if ((${#missing[@]})); then
-    info "not yet on PATH: ${missing[*]} — open a new shell, or re-run after brew bundle finishes"
+    # A WARNING, not a failure: the usual cause is that this shell simply predates the
+    # install, so it must not make an otherwise-clean bootstrap exit 3.
+    warn_note "not yet on PATH: ${missing[*]} — open a new shell, or re-run after brew bundle finishes"
   else
     ok "core tools present (zsh starship mise fzf nvim tmux git)"
   fi
@@ -600,7 +729,7 @@ set_login_shell() {
   if chsh -s "$brew_zsh"; then
     ok "login shell set — open a new terminal to use it"
   else
-    info "chsh failed — set it manually: chsh -s $brew_zsh"
+    fail_note "chsh failed — login shell unchanged; set it manually: chsh -s $brew_zsh"
   fi
 }
 
@@ -686,13 +815,19 @@ wire_links() {
   # and could drift core/ from day one with no local signal. CI's core-integrity still
   # catches it, but at PR time rather than commit time.
   #
-  # Not DRY-aware in the lib (it writes the hook unconditionally), so gate it here. `||
-  # true` because it returns non-zero on the benign "you already have a custom pre-commit
-  # hook" path, which must not abort a bootstrap under `set -e`.
+  # Not DRY-aware in the lib (it writes the hook unconditionally), so gate it here.
+  #
+  # The lib returns 0 on every BENIGN skip (not a git tree, core.hooksPath set, a custom
+  # pre-commit hook already present) and non-zero ONLY on a real failure — it can't
+  # resolve the hooks dir, or mkdir failed. So the old `|| true` swallowed precisely the
+  # two cases worth hearing about. A WARNING rather than an error: the guard is a
+  # commit-time convenience, and CI's core-integrity job still catches core/ edits at PR
+  # time, so its absence doesn't make the install itself degraded.
   if ((DRY)); then
     info "would install the core/ pre-commit guard (rejects hand-edits to the vendored subtree)"
   else
-    blib_install_core_guard "$REPO" || true
+    blib_install_core_guard "$REPO" ||
+      warn_note "core/ pre-commit guard not installed — hand-edits to core/ won't be caught locally (CI's core-integrity still will)"
   fi
 }
 
@@ -712,7 +847,21 @@ unlink_dest() { # unlink_dest <dest>
       if ((DRY)); then
         info "would remove symlink: ${dest/#"$HOME"/\~}"
       else
-        rm -f "$dest"
+        # An unwritable parent dir (or an immutable flag) makes this fail. Under `set -e`
+        # a bare `rm` would abort the script HERE — mid-uninstall, with no summary and no
+        # --json object, leaving a half-reversed HOME and no record of which half. Record
+        # it and carry on instead: the remaining ~40 dests are independent of this one.
+        #
+        # `|| { …; return 0; }` and not `|| fail_note …`: the caller is a bare
+        # `unlink_dest "$d"` inside a for-loop, so a non-zero return would abort the run
+        # anyway. Returning 0 is what "continue" means here.
+        rm -f "$dest" || {
+          fail_note "could not remove symlink ${dest/#"$HOME"/\~} — it is still wired to this repo; remove it by hand: rm '$dest'"
+          # Bail on THIS dest, don't fall through to the restore below: the symlink is
+          # still there, so the "is a real file present?" guard would wave us through and
+          # we'd mv a backup on top of a link we just failed to remove.
+          return 0
+        }
         ok "removed ${dest/#"$HOME"/\~}"
       fi
       n_removed=$((n_removed + 1))
@@ -751,7 +900,13 @@ unlink_dest() { # unlink_dest <dest>
     if ((DRY)); then
       info "would restore backup: ${newest/#"$HOME"/\~} → ${dest/#"$HOME"/\~}"
     else
-      mv "$newest" "$dest"
+      # Same reasoning as the rm above. Note what this failure does NOT cost you: mv
+      # either moves the file or leaves it where it was, so the backup is intact at
+      # $newest — say where, because that is the one thing the operator needs to know.
+      mv "$newest" "$dest" || {
+        fail_note "could not restore ${dest/#"$HOME"/\~} from backup — your original is still at ${newest/#"$HOME"/\~}; move it back by hand: mv '$newest' '$dest'"
+        return 0
+      }
       info "restored ${dest/#"$HOME"/\~} from backup"
     fi
     n_restored=$((n_restored + 1))
@@ -780,13 +935,27 @@ uninstall() {
   for d in "${dests[@]}"; do unlink_dest "$d"; done
   printf '%s==>%s %s\n' "$c_b" "$c_0" "uninstall summary"
   ok "$n_removed removed · $n_restored restored"
+  print_ledger
   ((DRY)) && info "dry run — nothing was changed; re-run without --dry-run to apply"
   info "left in place: Homebrew + packages, your login shell, and ~/.config/{zsh/99-local.zsh,git/local.gitconfig}"
+  # Same contract as the install path: a partial reversal must not read like a clean one.
+  # The dests that DID come out are listed above; these are the ones still wired.
+  if ((${#FAILURES[@]})); then
+    err "uninstall finished with ${#FAILURES[@]} failed step(s) — see above; those paths are still linked (exit 3)"
+  fi
 }
 
-# --uninstall short-circuits the whole install path (it's the reverse operation).
+# --uninstall short-circuits the whole install path (it's the reverse operation). The
+# emit_json here is not decoration: n_removed / n_restored are the two keys that ONLY an
+# uninstall ever fills, and this `exit 0` used to jump clean over the emitter at the foot
+# of the file, so `--uninstall --json` printed no object at all.
 if ((UNINSTALL)); then
   uninstall
+  emit_json
+  # Exit 3 on a partial reversal, matching the install path's meaning of the code: the
+  # run happened, but the machine is in a state you did not ask for. `exit 0` here was
+  # unconditional, so a dest that would not unlink reported success.
+  if ((${#FAILURES[@]})); then exit 3; fi
   exit 0
 fi
 
@@ -797,17 +966,31 @@ elif ((DRY)); then
   say "would provision: Homebrew + brew bundle (skipped in dry-run)"
 else
   provision
-  verify_tools
 fi
 
 wire_links
 
+# tpm (tmux plugin manager) — blib_link_core clones it during wire_links, but announces a
+# FAILED clone with blib_say (a blue `::` status line on stdout) and discards git's error,
+# so behind a proxy you get no plugins and nothing in the log stands out (#133). Until the
+# upstream logging fix lands, check the outcome here: the directory is either there or it
+# isn't. Skipped in --dry-run (nothing was cloned) and when tmux isn't in the selection.
+if ((DRY == 0)) && blib_want tmux && [[ ! -d "$HOME/.config/tmux/plugins/tpm" ]]; then
+  fail_note "tpm (tmux plugin manager) is missing — tmux will start with no plugins; clone it manually, then press prefix + I"
+fi
+
 # mise tools — install behind a spinner: it can churn for a while pulling runtimes,
 # and its raw output is noise unless it fails (spin shows the captured log only then).
-if command -v mise >/dev/null 2>&1; then
+#
+# NOT under --links-only, which usage() and the README both promise is "just (re)create
+# symlinks, no installs" — this block sat outside the provision branch and installed
+# anyway. --no-brew still runs it, per its documented "symlinks + mise" contract.
+if ((LINKS_ONLY == 0)) && command -v mise >/dev/null 2>&1; then
   say "mise install"
+  # spin already prints `err "<label> — failed (exit N)"` plus the captured log, so this
+  # records the step and says what was lost — it does not re-report the failure itself.
   spin "installing mise-managed tools" mise install ||
-    info "mise install hit an issue — run it manually later"
+    fail_note "mise install failed — node/python/ruby/go/rust/java/lua may be missing or stale; re-run: mise install"
 fi
 
 # login shell (opt-in: changes your default shell)
@@ -819,7 +1002,8 @@ if ((RUN_DEFAULTS)) && [[ -f "$REPO/macos/defaults.sh" ]]; then
   if ((DRY)); then
     info "would run: bash macos/defaults.sh (pass --dry-run to preview its keys)"
   elif confirm "Apply macOS system defaults now (changes system prefs)?"; then
-    bash "$REPO/macos/defaults.sh" || info "defaults.sh hit an issue"
+    bash "$REPO/macos/defaults.sh" ||
+      fail_note "macos/defaults.sh failed — system preferences were not (fully) applied; re-run: bash macos/defaults.sh"
   else
     info "macOS defaults skipped (declined)"
   fi
@@ -828,25 +1012,34 @@ elif [[ -f "$REPO/macos/defaults.sh" ]]; then
 fi
 
 # ── run summary ───────────────────────────────────────────────────────────────
+# Last, so its "not yet on PATH" verdict accounts for everything wire_links and
+# `mise install` just did. It also populates TOOLS_JSON for the --json object below.
+verify_tools
+
 print_summary "summary"
 if ((DRY)); then
   info "dry run — nothing above was actually changed; re-run without --dry-run to apply"
+elif ((${#FAILURES[@]})); then
+  # NOT ok "…complete" — the whole point of #133 is that a degraded run must not look
+  # like a clean one. The failing steps are listed by print_summary just above.
+  err "macOS bootstrap finished with ${#FAILURES[@]} failed step(s) — see above (exit 3)"
 else
   ok "macOS bootstrap complete — open a new shell or: exec zsh"
 fi
 
-# B7: machine-readable summary on the REAL stdout (fd 3, saved before the body redirect).
-# Provisioning automation can parse what changed + which headline tools landed on PATH,
-# instead of scraping human output. Hand-built JSON (no jq dependency on a fresh box).
-if ((JSON)); then
-  _dry=false
-  ((DRY)) && _dry=true
-  _tools_json=""
-  for _t in zsh starship mise fzf nvim tmux git; do
-    if command -v "$_t" >/dev/null 2>&1; then _present=true; else _present=false; fi
-    _tools_json+="${_tools_json:+,}\"$_t\":$_present"
-  done
-  printf '{"dry_run":%s,"linked":%d,"backed_up":%d,"seeded":%d,"skipped":%d,"removed":%d,"restored":%d,"tools":{%s}}\n' \
-    "$_dry" "$n_linked" "$n_backed" "$n_seeded" "$n_skipped" "$n_removed" "$n_restored" \
-    "$_tools_json" >&3
-fi
+# The machine-readable summary on the REAL stdout — see emit_json above. No-op without
+# --json. This is the normal end-of-run path; --uninstall emits from its own exit.
+emit_json
+
+# Exit 3 when any step failed — the run happened, but the box is DEGRADED. Distinct from
+# 1 (bootstrap could not run at all: not macOS, no core/, no CLT) and 2 (usage error), so
+# automation can tell "never started" from "ran but the runtimes never installed".
+#
+# AFTER the --json block on purpose: a degraded run is exactly when a provisioning script
+# most needs to read WHY, so the object must still be emitted.
+#
+# Deliberately CONDITIONAL, with no `exit 0` after it: a clean run still falls off the end
+# (a taken-no-branch `if` yields status 0). With an unconditional trailing `exit`, the
+# reachability pass in shellcheck declares on_interrupt (reached only via trap) and
+# seed() uninvoked, tripping SC2329 on code that was already there.
+if ((${#FAILURES[@]})); then exit 3; fi
