@@ -6,7 +6,7 @@
 > assumed. Where behaviour depends on the vendored `core/` subtree it is called out
 > as such (edit those upstream in `dotfiles-core`, never here).
 
-**Scope note.** This box is the **macOS OS-native layer** of a ten-repo, three-layer
+**Scope note.** This box is the **macOS OS-native layer** of an eleven-repo, three-layer
 system (Core → OS-native → Role). The interactive shell you actually get is the
 *composite* of the vendored Core zsh modules and this repo's macOS overlay
 (`os/macos.zsh`, `os/macos.conf`, `os/macos.gitconfig`). The guide treats that
