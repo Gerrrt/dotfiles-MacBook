@@ -29,6 +29,14 @@ JSON=0
 # --only/--skip module selection: captured here, validated by the shared lib
 # (blib_select) once core/lib/bootstrap-lib.sh is sourced below.
 ONLY_RAW="" SKIP_RAW="" ONLY_SEEN=0 SKIP_SEEN=0
+# BREW — which brew binary provision() drives. The BOOTSTRAP_BREW override exists so the
+# provision path is TESTABLE at all: a stub earlier on PATH cannot shadow the real brew,
+# because brew_shellenv's `path_helper` puts /opt/homebrew/bin at the FRONT of PATH before
+# provision() ever runs. Every provision call site goes through this — INCLUDING the
+# `command -v` gates, so a test with a stub can never fall into the real Homebrew
+# installer. brew_shellenv deliberately keeps its own hardcoded absolute prefixes: its job
+# is to FIND Homebrew, which is exactly what an override must not fake.
+BREW="${BOOTSTRAP_BREW:-brew}"
 
 # usage() is a real function (heredoc) rather than `sed -n '2,18p' "$0"`: the old
 # form was coupled to header line numbers, so editing the banner silently drifted
@@ -632,7 +640,7 @@ provision() {
   # `--no-brew` promises "skip Homebrew/brew bundle", but NO_BREW previously gated only the
   # bundle below — so on a fresh Mac the flag still downloaded and ran the Homebrew
   # installer (sudo prompt, several minutes, hundreds of MB). Gate the installer too.
-  if ((!NO_BREW)) && ! command -v brew >/dev/null 2>&1; then
+  if ((!NO_BREW)) && ! command -v "$BREW" >/dev/null 2>&1; then
     say "Installing Homebrew"
     # Download FIRST, check the status, THEN execute. The upstream one-liner
     # `/bin/bash -c "$(curl -fsSL …)"` cannot fail safely: a failed curl (no network, DNS,
@@ -669,7 +677,7 @@ provision() {
     # but whose shellenv failed reaches `brew bundle` as a bare `brew: command not found`
     # (exit 127) — the same misleading death this commit series removes from the installer
     # path, just one step later.
-    if ! command -v brew >/dev/null 2>&1; then
+    if ! command -v "$BREW" >/dev/null 2>&1; then
       err "Homebrew is not on PATH — cannot run brew bundle"
       info "see the shellenv error above; or put it on PATH by hand and re-run:"
       # shellcheck disable=SC2016  # a command for the USER to paste — must NOT expand here
@@ -679,17 +687,34 @@ provision() {
     # B13: skip the expensive resolve+install when the Brewfile is already satisfied.
     # `brew bundle check` is a fast read-only "is everything here installed?" probe, so a
     # re-run on a provisioned box no longer pays for a full `brew bundle` pass.
-    if brew bundle check --file="$REPO/Brewfile" >/dev/null 2>&1; then
+    if "$BREW" bundle check --file="$REPO/Brewfile" >/dev/null 2>&1; then
       ok "brew bundle already satisfied — skipping (every formula/cask is installed)"
     else
       # Up-front scope so the longest, mostly-opaque step reads as BOUNDED work, not an
       # open-ended hang: count the Brewfile entries (best-effort; falls back to "?" if the
       # list query fails) and name the number before handing off to brew's own streaming
       # output. `brew bundle list --all` enumerates every tap/brew/cask/mas line.
+      #
+      # `|| n_pkgs=""` is what makes "best-effort" TRUE. `set -o pipefail` plus a STANDALONE
+      # assignment is a silent-kill combo: the assignment IS the command, so when `brew
+      # bundle list` died (a broken vendored gem stack makes every `brew bundle` subcommand
+      # crash, while plain `brew list` still works) the non-zero pipeline aborted the entire
+      # run under `set -e` — with the traceback already discarded by `2>/dev/null`, and
+      # before provision(), the FIRST thing a full run does, had printed one byte. The
+      # symptom was a bootstrap that emitted absolutely nothing and exited non-zero. An
+      # AND-OR list is exempt from errexit, which is the only reason the `${n_pkgs:-?}`
+      # fallback on the next line is reachable at all.
       local n_pkgs
-      n_pkgs="$(brew bundle list --file="$REPO/Brewfile" --all 2>/dev/null | wc -l | tr -d ' ')"
+      n_pkgs="$("$BREW" bundle list --file="$REPO/Brewfile" --all 2>/dev/null | wc -l | tr -d ' ')" || n_pkgs=""
       say "brew bundle (${n_pkgs:-?} formulae/casks — this can take a while)"
-      brew bundle --file="$REPO/Brewfile"
+      # LEDGER a failed bundle instead of dying on it (#133). As a bare command under
+      # `set -e` this aborted the run at exit 1 — mid-provision, before wire_links, so a
+      # sick Homebrew cost you every symlink and printed no summary. The packages are the
+      # one part of a bootstrap you can retry by hand; the wiring is not. Record it, keep
+      # going, and let the run close as DEGRADED (exit 3) with the reason named.
+      if ! "$BREW" bundle --file="$REPO/Brewfile"; then
+        fail_note "brew bundle failed — some formulae/casks are missing; re-run: brew bundle --file=$REPO/Brewfile"
+      fi
     fi
   else
     info "skipping brew bundle (--no-brew or no Brewfile yet)"

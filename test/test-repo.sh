@@ -194,6 +194,44 @@ else
   fi
 fi
 
+# ── B1b3. bootstrap.sh: a CRASHING brew degrades the run, it does not silence it ─
+# Regression, and the nastiest failure this script has had. A broken vendored gem stack
+# makes every `brew bundle` subcommand crash while plain `brew list` still works, so
+# provision() reached:
+#     n_pkgs="$(brew bundle list … 2>/dev/null | wc -l | tr -d ' ')"
+# `set -o pipefail` propagated the crash through the pipeline, and a STANDALONE assignment
+# IS the command — so `set -e` killed the whole run right there. The traceback was already
+# discarded by `2>/dev/null`, and provision() is the FIRST thing a full run does, so the
+# user saw absolutely ZERO output and a non-zero exit, with not one symlink wired.
+# A stub on PATH cannot reproduce this (brew_shellenv's path_helper prepends
+# /opt/homebrew/bin and shadows it) — hence the BOOTSTRAP_BREW seam, which also keeps this
+# full-provision run from ever touching the real Homebrew installer.
+# Self-skips where provisioning cannot run at all (no Command Line Tools → Linux CI).
+section "bootstrap.sh — a crashing brew degrades the run, it does not silence it"
+
+if ! command -v xcode-select >/dev/null 2>&1 || ! xcode-select -p >/dev/null 2>&1; then
+  skipt "crashing brew degrades the run (no Command Line Tools — provisioning cannot run here)"
+else
+  ahome="$(mktemp -d)"
+  abin="$(mktemp -d)"
+  mkdir -p "$ahome/.config/tmux/plugins/tpm"
+  printf '#!/bin/sh\nexit 0\n' >"$abin/mise"
+  printf '#!/bin/sh\nexit 1\n' >"$abin/brew" # every subcommand crashes, as the real one did
+  chmod +x "$abin/mise" "$abin/brew"
+  # A FULL run (no --links-only/--no-brew): the provision path is the whole point.
+  OUT="$(HOME="$ahome" PATH="$abin:$PATH" BOOTSTRAP_BREW="$abin/brew" BOOTSTRAP_ALLOW_NON_DARWIN=1 NO_COLOR=1 bash "$REPO/bootstrap.sh" 2>&1)"
+  brc=$?
+  # The headline symptom, asserted on its own: silence is the bug.
+  if [[ -n "$OUT" ]]; then ok "crashing brew: the run still PRINTS"; else no "crashing brew: the run still PRINTS" "zero bytes of output"; fi
+  assert_eq "crashing brew: exits 3 (degraded), not 1 (aborted)" 3 "$brc"
+  # Only reachable if the count assignment survived the crash — the precise pin for the bug.
+  assert_contains "crashing brew: the '?' package-count fallback is reachable" "$OUT" "(? formulae/casks"
+  assert_contains "crashing brew: the bundle failure is ledgered" "$OUT" "brew bundle failed"
+  assert_contains "crashing brew: the summary still prints" "$OUT" "linked ·"
+  if [[ -L "$ahome/.zshenv" ]]; then ok "crashing brew: symlinks were still wired"; else no "crashing brew: symlinks were still wired" "the sandbox .zshenv is not a link"; fi
+  rm -rf "$ahome" "$abin"
+fi
+
 # ── B1c. bootstrap.sh: a degraded run REPORTS itself (#133) ───────────────────
 # Steps that must not abort the run (mise, defaults.sh, chsh, tpm) were each written
 # `|| info "…"` and forgotten: the run still closed with "bootstrap complete" and exit 0,
