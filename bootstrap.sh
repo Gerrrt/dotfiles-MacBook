@@ -29,6 +29,14 @@ JSON=0
 # --only/--skip module selection: captured here, validated by the shared lib
 # (blib_select) once core/lib/bootstrap-lib.sh is sourced below.
 ONLY_RAW="" SKIP_RAW="" ONLY_SEEN=0 SKIP_SEEN=0
+# BREW — which brew binary provision() drives. The BOOTSTRAP_BREW override exists so the
+# provision path is TESTABLE at all: a stub earlier on PATH cannot shadow the real brew,
+# because brew_shellenv's `path_helper` puts /opt/homebrew/bin at the FRONT of PATH before
+# provision() ever runs. Every provision call site goes through this — INCLUDING the
+# `command -v` gates, so a test with a stub can never fall into the real Homebrew
+# installer. brew_shellenv deliberately keeps its own hardcoded absolute prefixes: its job
+# is to FIND Homebrew, which is exactly what an override must not fake.
+BREW="${BOOTSTRAP_BREW:-brew}"
 
 # usage() is a real function (heredoc) rather than `sed -n '2,18p' "$0"`: the old
 # form was coupled to header line numbers, so editing the banner silently drifted
@@ -458,6 +466,21 @@ spin() {
   return "$rc"
 }
 
+# brew_shellenv runs TWICE per run (the unconditional call below and again in provision()),
+# so a genuinely broken brew trips both calls. Ledger it once — a second FAILURES entry for
+# the same broken step would inflate the "N step(s) did not complete" tally — and just say
+# it plainly the second time. Ends on a zero status (both fail_note and err do) so a call in
+# statement position cannot trip `set -e`.
+BREW_SHELLENV_NOTED=0
+brew_shellenv_fail() { # brew_shellenv_fail <message>  → ledger the first, err the rest
+  if ((BREW_SHELLENV_NOTED)); then
+    err "$1"
+  else
+    BREW_SHELLENV_NOTED=1
+    fail_note "$1"
+  fi
+}
+
 # brew_shellenv — put Homebrew on PATH for the rest of this run (Apple Silicon first, then
 # Intel). Factored out of provision() because it is needed in TWO places:
 #
@@ -480,24 +503,34 @@ spin() {
 # installer one-liner, and it matters MORE here now that the early call is the only thing
 # putting brew on PATH in --links-only mode.
 #
+# What is checked is the EXIT STATUS and then the resulting PATH — never the shape of the
+# output. Empty output is a documented SUCCESS (see the guard note in the body).
+#
 # Returns non-zero (after saying so) when a brew binary exists but shellenv fails, so a
 # caller that genuinely needs brew can escalate. Not fatal on its own — the symlink-only
 # modes work fine without Homebrew, so a broken brew must not stop them. A box with no
 # Homebrew at all is NOT an error: that's a fresh machine, and provision() installs it.
 brew_shellenv() {
-  local brew out
+  local brew out bindir
   for brew in /opt/homebrew/bin/brew /usr/local/bin/brew; do
     [[ -x "$brew" ]] || continue
+    bindir="${brew%/brew}"
     if ! out="$("$brew" shellenv)"; then
-      err "$brew shellenv failed — Homebrew tools will not be on PATH"
+      brew_shellenv_fail "$brew shellenv failed — Homebrew tools will not be on PATH"
       return 1
     fi
-    if [[ -z "$out" ]]; then
-      err "$brew shellenv produced no output — Homebrew tools will not be on PATH"
-      return 1
-    fi
+    # EMPTY OUTPUT IS SUCCESS, not failure. `brew shellenv` opens with an idempotence guard
+    # and returns having printed NOTHING when its own bin:sbin already lead PATH:
+    #   [[ "${HOMEBREW_PATH%%:"${HOMEBREW_PREFIX}"/sbin*}" == "${HOMEBREW_PREFIX}/bin" ]]
+    # We call this function TWICE, and the first call's eval is exactly what puts brew at
+    # the front of PATH — so on a working box the second call ALWAYS takes that branch.
+    # Testing `[[ -z "$out" ]]` therefore reported success as a failure on every full run.
+    # Test the OUTCOME instead: eval whatever came back (an empty eval is a correct no-op),
+    # then assert the thing we actually care about — brew's bin dir really is on PATH.
     eval "$out"
-    return 0
+    [[ ":$PATH:" == *":$bindir:"* ]] && return 0
+    brew_shellenv_fail "$brew shellenv did not put $bindir on PATH"
+    return 1
   done
   return 0 # no Homebrew on this box (yet) — normal on a fresh machine
 }
@@ -523,6 +556,10 @@ brew_shellenv() {
 # under `set -e` would otherwise abort the whole run here — before the guards have even
 # decided whether this mode needs Homebrew at all. Symlink-only runs must survive a broken
 # brew; the run that actually needs it (provision, below) escalates on its own.
+#
+# Discarding the status does NOT hide the failure: brew_shellenv has already recorded it
+# through fail_note, so the ledger, the summary and the --json "ok" field still report it
+# and the run still exits 3.
 brew_shellenv || true
 
 ((DRY)) && say "DRY RUN — no changes will be made; printing the plan only"
@@ -603,7 +640,7 @@ provision() {
   # `--no-brew` promises "skip Homebrew/brew bundle", but NO_BREW previously gated only the
   # bundle below — so on a fresh Mac the flag still downloaded and ran the Homebrew
   # installer (sudo prompt, several minutes, hundreds of MB). Gate the installer too.
-  if ((!NO_BREW)) && ! command -v brew >/dev/null 2>&1; then
+  if ((!NO_BREW)) && ! command -v "$BREW" >/dev/null 2>&1; then
     say "Installing Homebrew"
     # Download FIRST, check the status, THEN execute. The upstream one-liner
     # `/bin/bash -c "$(curl -fsSL …)"` cannot fail safely: a failed curl (no network, DNS,
@@ -631,15 +668,16 @@ provision() {
   fi
   # brew now exists (or never will) — re-run the PATH setup, since the unconditional call
   # near the top ran before this install. Same `|| true` reasoning as there: brew_shellenv
-  # has already SAID what went wrong, and the guard just below turns that into a clean exit
-  # with a remedy rather than letting `brew bundle` die at 127 with no explanation.
+  # has already SAID what went wrong (and ledgered it once), and the guard just below turns
+  # that into a clean exit with a remedy rather than letting `brew bundle` die at 127 with
+  # no explanation.
   brew_shellenv || true
   if ((!NO_BREW)) && [[ -f "$REPO/Brewfile" ]]; then
     # Escalate here, where Homebrew is genuinely required. Without this, a brew that exists
     # but whose shellenv failed reaches `brew bundle` as a bare `brew: command not found`
     # (exit 127) — the same misleading death this commit series removes from the installer
     # path, just one step later.
-    if ! command -v brew >/dev/null 2>&1; then
+    if ! command -v "$BREW" >/dev/null 2>&1; then
       err "Homebrew is not on PATH — cannot run brew bundle"
       info "see the shellenv error above; or put it on PATH by hand and re-run:"
       # shellcheck disable=SC2016  # a command for the USER to paste — must NOT expand here
@@ -649,17 +687,34 @@ provision() {
     # B13: skip the expensive resolve+install when the Brewfile is already satisfied.
     # `brew bundle check` is a fast read-only "is everything here installed?" probe, so a
     # re-run on a provisioned box no longer pays for a full `brew bundle` pass.
-    if brew bundle check --file="$REPO/Brewfile" >/dev/null 2>&1; then
+    if "$BREW" bundle check --file="$REPO/Brewfile" >/dev/null 2>&1; then
       ok "brew bundle already satisfied — skipping (every formula/cask is installed)"
     else
       # Up-front scope so the longest, mostly-opaque step reads as BOUNDED work, not an
       # open-ended hang: count the Brewfile entries (best-effort; falls back to "?" if the
       # list query fails) and name the number before handing off to brew's own streaming
       # output. `brew bundle list --all` enumerates every tap/brew/cask/mas line.
+      #
+      # `|| n_pkgs=""` is what makes "best-effort" TRUE. `set -o pipefail` plus a STANDALONE
+      # assignment is a silent-kill combo: the assignment IS the command, so when `brew
+      # bundle list` died (a broken vendored gem stack makes every `brew bundle` subcommand
+      # crash, while plain `brew list` still works) the non-zero pipeline aborted the entire
+      # run under `set -e` — with the traceback already discarded by `2>/dev/null`, and
+      # before provision(), the FIRST thing a full run does, had printed one byte. The
+      # symptom was a bootstrap that emitted absolutely nothing and exited non-zero. An
+      # AND-OR list is exempt from errexit, which is the only reason the `${n_pkgs:-?}`
+      # fallback on the next line is reachable at all.
       local n_pkgs
-      n_pkgs="$(brew bundle list --file="$REPO/Brewfile" --all 2>/dev/null | wc -l | tr -d ' ')"
+      n_pkgs="$("$BREW" bundle list --file="$REPO/Brewfile" --all 2>/dev/null | wc -l | tr -d ' ')" || n_pkgs=""
       say "brew bundle (${n_pkgs:-?} formulae/casks — this can take a while)"
-      brew bundle --file="$REPO/Brewfile"
+      # LEDGER a failed bundle instead of dying on it (#133). As a bare command under
+      # `set -e` this aborted the run at exit 1 — mid-provision, before wire_links, so a
+      # sick Homebrew cost you every symlink and printed no summary. The packages are the
+      # one part of a bootstrap you can retry by hand; the wiring is not. Record it, keep
+      # going, and let the run close as DEGRADED (exit 3) with the reason named.
+      if ! "$BREW" bundle --file="$REPO/Brewfile"; then
+        fail_note "brew bundle failed — some formulae/casks are missing; re-run: brew bundle --file=$REPO/Brewfile"
+      fi
     fi
   else
     info "skipping brew bundle (--no-brew or no Brewfile yet)"
