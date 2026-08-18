@@ -21,7 +21,13 @@
     local cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/brew-shellenv-${brew:h:h:t}.zsh"
     if [[ -s "$cache" && ! "$brew" -nt "$cache" ]]; then
       source "$cache"                                      # fresh cache → no brew fork
-    elif { mkdir -p "${cache:h}" && "$brew" shellenv >| "$cache"; } 2>/dev/null; then
+    # Generate from a PATH that does NOT lead with brew: `shellenv` opens with an
+    # idempotence guard and prints NOTHING when its own bin:sbin already lead PATH. In a
+    # nested login shell (a tmux pane below) that would cache an EMPTY file, which `-s`
+    # then rejects on every later login — re-forking brew forever, the one cost this
+    # cache exists to avoid. A sanitised PATH makes the output unconditionally complete,
+    # which keeps `-s` meaningful as a "the write succeeded" test.
+    elif { mkdir -p "${cache:h}" && PATH=/usr/bin:/bin "$brew" shellenv >| "$cache"; } 2>/dev/null; then
       source "$cache"                                      # regenerated → source fresh write
     else
       eval "$("$brew" shellenv)"                           # uncacheable → live eval (never stale)

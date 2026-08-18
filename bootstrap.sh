@@ -458,6 +458,21 @@ spin() {
   return "$rc"
 }
 
+# brew_shellenv runs TWICE per run (the unconditional call below and again in provision()),
+# so a genuinely broken brew trips both calls. Ledger it once — a second FAILURES entry for
+# the same broken step would inflate the "N step(s) did not complete" tally — and just say
+# it plainly the second time. Ends on a zero status (both fail_note and err do) so a call in
+# statement position cannot trip `set -e`.
+BREW_SHELLENV_NOTED=0
+brew_shellenv_fail() { # brew_shellenv_fail <message>  → ledger the first, err the rest
+  if ((BREW_SHELLENV_NOTED)); then
+    err "$1"
+  else
+    BREW_SHELLENV_NOTED=1
+    fail_note "$1"
+  fi
+}
+
 # brew_shellenv — put Homebrew on PATH for the rest of this run (Apple Silicon first, then
 # Intel). Factored out of provision() because it is needed in TWO places:
 #
@@ -480,24 +495,34 @@ spin() {
 # installer one-liner, and it matters MORE here now that the early call is the only thing
 # putting brew on PATH in --links-only mode.
 #
+# What is checked is the EXIT STATUS and then the resulting PATH — never the shape of the
+# output. Empty output is a documented SUCCESS (see the guard note in the body).
+#
 # Returns non-zero (after saying so) when a brew binary exists but shellenv fails, so a
 # caller that genuinely needs brew can escalate. Not fatal on its own — the symlink-only
 # modes work fine without Homebrew, so a broken brew must not stop them. A box with no
 # Homebrew at all is NOT an error: that's a fresh machine, and provision() installs it.
 brew_shellenv() {
-  local brew out
+  local brew out bindir
   for brew in /opt/homebrew/bin/brew /usr/local/bin/brew; do
     [[ -x "$brew" ]] || continue
+    bindir="${brew%/brew}"
     if ! out="$("$brew" shellenv)"; then
-      err "$brew shellenv failed — Homebrew tools will not be on PATH"
+      brew_shellenv_fail "$brew shellenv failed — Homebrew tools will not be on PATH"
       return 1
     fi
-    if [[ -z "$out" ]]; then
-      err "$brew shellenv produced no output — Homebrew tools will not be on PATH"
-      return 1
-    fi
+    # EMPTY OUTPUT IS SUCCESS, not failure. `brew shellenv` opens with an idempotence guard
+    # and returns having printed NOTHING when its own bin:sbin already lead PATH:
+    #   [[ "${HOMEBREW_PATH%%:"${HOMEBREW_PREFIX}"/sbin*}" == "${HOMEBREW_PREFIX}/bin" ]]
+    # We call this function TWICE, and the first call's eval is exactly what puts brew at
+    # the front of PATH — so on a working box the second call ALWAYS takes that branch.
+    # Testing `[[ -z "$out" ]]` therefore reported success as a failure on every full run.
+    # Test the OUTCOME instead: eval whatever came back (an empty eval is a correct no-op),
+    # then assert the thing we actually care about — brew's bin dir really is on PATH.
     eval "$out"
-    return 0
+    [[ ":$PATH:" == *":$bindir:"* ]] && return 0
+    brew_shellenv_fail "$brew shellenv did not put $bindir on PATH"
+    return 1
   done
   return 0 # no Homebrew on this box (yet) — normal on a fresh machine
 }
@@ -523,6 +548,10 @@ brew_shellenv() {
 # under `set -e` would otherwise abort the whole run here — before the guards have even
 # decided whether this mode needs Homebrew at all. Symlink-only runs must survive a broken
 # brew; the run that actually needs it (provision, below) escalates on its own.
+#
+# Discarding the status does NOT hide the failure: brew_shellenv has already recorded it
+# through fail_note, so the ledger, the summary and the --json "ok" field still report it
+# and the run still exits 3.
 brew_shellenv || true
 
 ((DRY)) && say "DRY RUN — no changes will be made; printing the plan only"
@@ -631,8 +660,9 @@ provision() {
   fi
   # brew now exists (or never will) — re-run the PATH setup, since the unconditional call
   # near the top ran before this install. Same `|| true` reasoning as there: brew_shellenv
-  # has already SAID what went wrong, and the guard just below turns that into a clean exit
-  # with a remedy rather than letting `brew bundle` die at 127 with no explanation.
+  # has already SAID what went wrong (and ledgered it once), and the guard just below turns
+  # that into a clean exit with a remedy rather than letting `brew bundle` die at 127 with
+  # no explanation.
   brew_shellenv || true
   if ((!NO_BREW)) && [[ -f "$REPO/Brewfile" ]]; then
     # Escalate here, where Homebrew is genuinely required. Without this, a brew that exists
