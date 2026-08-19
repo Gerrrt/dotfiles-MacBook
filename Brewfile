@@ -7,7 +7,7 @@
 # provide cargo/go/python/etc. on PATH.
 #
 # Offensive / pentest tooling intentionally does NOT live here — it lives in
-# dotfiles-Kali. Keep this box a clean dev/security-engineering environment.
+# dotfiles-Offense. Keep this box a clean dev/security-engineering environment.
 #
 # Reproducibility: THIS Brewfile is the committed source of truth. Homebrew 4.x
 # deprecated and 6.x removed `Brewfile.lock.json`, so there is no lockfile to pin
