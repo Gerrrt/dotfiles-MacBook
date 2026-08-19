@@ -2,7 +2,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # macOS-only INTERACTIVE shell extras. Sourced near the end of .zshrc (after the
 # Core modules), so it can override Core. PATH/env that must exist in every shell
-# lives in .zprofile/.zshenv, not here. Nothing offensive here — that's Kali.
+# lives in .zprofile/.zshenv, not here. Nothing offensive here — that's dotfiles-Offense.
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Native clipboard already works: Core's `clip`/`clip-paste` detect Darwin and
