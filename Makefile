@@ -1,192 +1,105 @@
-# Makefile — single source of truth for lint/format. Humans and CI run the SAME
-# commands, so "passes locally" means "passes in CI".
-#
-# Scope: only repo-owned files. `core/` is a vendored git-subtree from
-# dotfiles-core and is linted in THAT repo's CI — reformatting it here would
-# fight the subtree. A non-blocking `core-advisory` target surfaces core/ findings
-# without gating. See README "Development".
-#
-# Quick start:  make lint   (run everything)   |   make fmt   (auto-format)
-
-SHELL := bash
+# Makefile — a discoverable façade over the existing entry points.
+# ──────────────────────────────────────────────────────────────────────────────
+# This adds NO logic: every target shells out to the real script (scripts/*.sh,
+# pre-commit), which stay the single source of truth. It exists so a newcomer can
+# type `make` and see how to lint, test, audit, and sync — instead of grepping the
+# README for scripts/ paths. The audit (`make audit`) is the one gate; CI and
+# pre-commit call the same scripts/audit-core.sh, so `make audit` == green CI.
+# ──────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
-
-# Repo-owned bash scripts: every *.sh outside the vendored core/ subtree, plus the two
-# bash entry points with NO .sh extension — sketchybar/sketchybarrc and borders/bordersrc.
-# Each tool requires that exact filename, so the glob would miss them. Append them
-# explicitly so shellcheck/shfmt/syntax cover them like any other repo-owned script.
-SH_FILES := $(shell find . -name '*.sh' -not -path './core/*' -not -path './.git/*' | sort) sketchybar/sketchybarrc borders/bordersrc
-SHFMT_FLAGS := -i 2
-
-# Repo-owned zsh modules. These are the real behavioral surface of this repo, yet
-# the .sh-only globs above never reach them (the entry files have NO extension).
-# `zsh -n` parses each so a broken edit can't ship green. core/ zsh is gated in
-# dotfiles-core's own CI.
-ZSH_FILES := zsh/zshenv zsh/zprofile zsh/zshrc os/macos.zsh
-
-.PHONY: help lint fmt fmt-check shellcheck syntax zsh-syntax check core-advisory \
-        tools test test-repo test-all bench bootstrap bootstrap-dry doctor sync-core \
-        core-audit verify-core core-lock brew-check secrets config-check markdownlint pins-check \
-        trap-guard skip-guards
+.PHONY: help setup doctor audit audit-changed test bench profile bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern release tag publish release-notes
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
-	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-15s\033[0m %s\n",$$1,$$2}'
+	@echo "dotfiles-core — make targets:"
+	@grep -E '^[a-z][a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) \
+		| sed -E 's/:.*## /\t/' | sort | awk -F'\t' '{printf "  \033[36m%-13s\033[0m %s\n", $$1, $$2}'
 
-lint: shellcheck fmt-check syntax zsh-syntax trap-guard config-check markdownlint secrets pins-check ## Run all gating checks (shell + format + syntax + trap discipline + configs + markdown + secrets + core pins)
+setup: ## One-command dev bootstrap (pre-commit hooks + version doctor + audit) — start here
+	@./scripts/setup.sh
 
-shellcheck: ## Static analysis of repo-owned bash
-	@shellcheck $(SH_FILES)
+doctor: ## Read-only triage: are the dev tools present and matching the pins? (no install, no audit)
+	@./scripts/setup.sh --doctor
 
-fmt-check: ## Verify formatting without writing (CI uses this)
-	@shfmt $(SHFMT_FLAGS) -d $(SH_FILES)
+audit: ## Run the full Core audit (manifest, exec-bits, syntax, lint, behavioral) — the one gate
+	@./scripts/audit-core.sh
 
-fmt: ## Auto-format repo-owned bash in place
-	@shfmt $(SHFMT_FLAGS) -w $(SH_FILES)
+audit-changed: ## Audit only what your git diff touches (fast dev loop; same classifier as CI)
+	@./scripts/audit-core.sh --changed
 
-syntax: ## `bash -n` syntax gate on every repo-owned script
-	@for f in $(SH_FILES); do bash -n "$$f" || exit 1; done
-	@echo "syntax ok:"; printf '  %s\n' $(SH_FILES)
+test: ## Run only the behavioral tests (load-order smoke + function units)
+	@./scripts/test-core.sh
 
-# ONE RECIPE LINE, DELIBERATELY — do not split the guard from the work. Every line of a
-# make recipe runs in its OWN shell, so a guard that ends in `exit 0` exits only ITS line;
-# make reads that as success and runs the next line, calling the very tool just reported
-# missing. That is #156: all three of these printed "skip …" and then failed anyway, so
-# `make lint` could not pass on a box without gitleaks, zsh or npx — the exact boxes the
-# guards exist for. (`brew-check` escaped it only because its guard uses `exit 1`, which
-# fails the line and aborts the target.) test/check-skip-guards.sh pins this.
-zsh-syntax: ## `zsh -n` syntax gate on repo-owned zsh modules (skips if zsh absent)
-	@if ! command -v zsh >/dev/null 2>&1; then echo "  skip zsh-syntax (zsh not installed)"; exit 0; fi; \
-	 for f in $(ZSH_FILES); do zsh -n "$$f" || exit 1; done; \
-	 echo "zsh syntax ok:"; printf '  %s\n' $(ZSH_FILES)
+bench: ## Benchmark Core's contribution to zsh startup (needs hyperfine; skips if absent)
+	@./scripts/bench-core.sh
 
-# Repo-owned secret scan. Core's audit runs gitleaks over core/ ONLY, so this repo's own
-# tree — Brewfile, os/, zsh/, ssh/config, sketchybar/, macos/defaults.sh — was never
-# scanned by anything. GitHub push protection was the only net, and it only fires after
-# you try to push. Version is pinned in the vendored core/scripts/tool-versions.env
-# (GITLEAKS_VERSION/GITLEAKS_SHA256); CI installs that exact build via setup-core-tools.
-# Self-skips when gitleaks is absent so `make lint` still works on a bare box.
-secrets: ## Scan the working tree for committed secrets (gitleaks; skips if not installed)
-	@# One recipe line — see the note above zsh-syntax (#156).
-	@if ! command -v gitleaks >/dev/null 2>&1; then echo "  skip secrets (gitleaks not installed — brew bundle)"; exit 0; fi; \
-	 gitleaks dir . --no-banner --redact
+profile: ## Per-module zsh startup breakdown (attributes the total cost; slowest first)
+	@./scripts/bench-core.sh --profile
 
-# Parse-gate the JSON/JSONC/TOML the macOS desktop layer is made of. Nothing checked these
-# before: a malformed karabiner.json or aerospace.toml passed every gate and only failed on
-# the next fresh install, silently killing the keyboard remap or the tiling WM.
-trap-guard: ## Refuse a RETURN trap that does not disarm itself (shellcheck cannot see this)
-	@# A bash RETURN trap is a GLOBAL slot, not a function-scoped one: armed inside a
-	@# function it survives into the CALLER's frame and fires again on ITS return, where
-	@# the local it cleans up is gone and `set -u` kills the script. Valid bash, so
-	@# shellcheck and `bash -n` both pass it — hence a dedicated scan. The rule itself is
-	@# the VENDORED _core_return_trap_hits, not a copy: see the script's header, #154.
-	@./test/check-return-traps.sh $(SH_FILES)
+bench-atuin: ## Measure atuin write latency, daemon off vs on, under contention (needs atuin; skips if absent)
+	@./scripts/bench-atuin-daemon.sh
 
-skip-guards: ## Assert the "skips if not installed" targets actually skip (regression gate for #156)
-	@./test/check-skip-guards.sh
+bench-atuin-systemd: ## Same, but through a transient systemd user unit (skips without a user bus)
+	@./scripts/bench-atuin-daemon.sh --systemd
 
-config-check: ## Parse every repo-owned .json/.jsonc/.toml (karabiner, aerospace, fastfetch, renovate)
-	@./test/check-configs.sh
+verify-atuin-guard: ## Re-measure the silent-discard premise _core_atuin_daemon_guard rests on (0 holds / 1 moved / 3 unmeasurable)
+	@./scripts/verify-atuin-guard.sh
 
-# .markdownlint.jsonc existed but NOTHING ran it — 55 lines of dead config next to a 52 KB
-# guide. markdownlint-cli2 is npm-only (no single binary to SHA-pin like the others), so it
-# is version-pinned from the vendored tool-versions.env and run through npx. Self-skips
-# without node so `make lint` still works on a bare box.
-markdownlint: ## Lint repo-owned markdown against .markdownlint.jsonc (skips without node)
-	@# One recipe line — see the note above zsh-syntax (#156).
-	@if ! command -v npx >/dev/null 2>&1; then echo "  skip markdownlint (node/npx not installed)"; exit 0; fi; \
-	 v="$$(sed -n 's/^MARKDOWNLINT_VERSION=//p' core/scripts/tool-versions.env | head -n1)"; \
-	 npx --yes "markdownlint-cli2@$${v:-latest}" "*.md" "sketchybar/*.md" >/dev/null \
-	   && echo "  markdownlint ok" \
-	   || { npx --yes "markdownlint-cli2@$${v:-latest}" "*.md" "sketchybar/*.md"; exit 1; }
+verify-atuin-guard-autostart: ## Same three verdicts for the OTHER premise: does atuin self-heal its daemon under ATUIN_DAEMON__AUTOSTART? (SPAWNS a real daemon)
+	@./scripts/verify-atuin-guard.sh --premise autostart
 
-core-advisory: ## Non-blocking shellcheck over vendored core/ (fixes land upstream)
-	@shellcheck $$(find core -name '*.sh') || \
-	  echo "(advisory) core/ findings above are fixed upstream in dotfiles-core"
+lint: audit ## Alias for `audit` (the audit IS the lint+test gate)
 
-core-audit: ## Gate the vendored Core subtree with its OWN audit (manifest/exec-bits/syntax/config drift a subtree pull can introduce)
-	@cd core && ./scripts/audit-core.sh --quiet
+sync: ## Subtree-pull Core into every OS repo (THE maintain button) — writes to sibling repos
+	@./scripts/sync-core.sh
 
-# The THIRD reference to a Core commit. core-integrity and verify-core gate the subtree
-# and core.lock; nothing gated the workflow pins, so a sync could advance the tree while
-# the callers kept running the PREVIOUS Core's reusables — with every gate green. The
-# auto-tag caller holds `contents: write`, so that is not cosmetic.
-pins-check: ## Assert the reusable-workflow SHA pins equal core.lock's core_sha
-	@./test/check-pins.sh
+sync-dry: ## Show what `sync` would do, touching nothing
+	@./scripts/sync-core.sh --dry-run
 
-verify-core: ## Assert vendored core/ is byte-for-byte upstream @ the recorded subtree-split (catches hand-edits + orphans the dir-level manifest misses)
-	@./test/verify-core.sh
+fleet-drift: ## Report which OS repos (+ Windows) lag the latest RELEASED Core tag — the vendoring-drift dashboard
+	@./scripts/fleet-drift.sh
 
-# The output MUST stay byte-identical to what dotfiles-core's sync-core.sh writes, because
-# that is what every other consumer reads: core-integrity.sh parses `core_tag`, and
-# fleet-drift.sh reports `core_version`/`core_sha`/`core_tag` per repo. This recipe used to
-# emit a DIFFERENT header and drop `core_tag` entirely — so running it (which the sync-core
-# help text below tells you to do after a manual pull) silently downgraded the lock and
-# produced a spurious diff against the automated writer.
-#
-# `core_branch` legitimately holds a SHA: the fan-out sets CORE_BRANCH=<target sha> so the
-# lock records exactly what was vendored, not a moving branch name. Preserved from the
-# existing lock unless CORE_BRANCH overrides it.
-#
-# `core_tag` is emitted as v<core.version> when core.version is a well-formed X.Y.Z, which
-# is Core's release-tag convention. Vendoring an UNTAGGED Core (a pre-release SHA) is the
-# one case this cannot know about — drop the line by hand there, matching sync-core.sh,
-# which only emits it once Core actually carries a tag.
-core-lock: ## Regenerate core.lock from the vendored subtree-split (after a MANUAL subtree pull; CORE_BRANCH overrides the recorded branch; sync-core writes it automatically)
-	@split="$$(git log --grep='git-subtree-dir: core' -n1 --format='%b' 2>/dev/null \
-	  | sed -n 's/^[[:space:]]*git-subtree-split:[[:space:]]*//p' | head -n1)"; \
-	 [ -n "$$split" ] || { echo "  core-lock: no git-subtree-split marker (not a subtree checkout?)" >&2; exit 1; }; \
-	 ver="$$(tr -d '[:space:]' < core/core.version 2>/dev/null || echo unknown)"; \
-	 branch="$${CORE_BRANCH:-$$(sed -n 's/^core_branch=//p' core.lock 2>/dev/null | head -n1)}"; \
-	 branch="$${branch:-main}"; \
-	 { echo "# GENERATED by dotfiles-core sync-core.sh — vendored Core provenance (B1)."; \
-	   echo "# Regenerate after a manual 'git subtree pull' with: make core-lock"; \
-	   echo "core_version=$$ver"; echo "core_sha=$$split"; echo "core_branch=$$branch"; \
-	   case "$$ver" in [0-9]*.[0-9]*.[0-9]*) echo "core_tag=v$$ver" ;; esac; } > core.lock; \
-	 echo "  wrote core.lock → $$(echo "$$split" | cut -c1-12) (v$$ver, $$branch) — review + commit it"
+core-integrity: ## Verify every OS repo's vendored core/ is pristine (not hand-edited) vs its core.lock
+	@./scripts/core-integrity.sh
 
-test: ## Run the vendored Core regression harness (self-skips without zsh)
-	@cd core && ./scripts/test-core.sh
+parity-check: ## Verify PARITY.md's aligned rows hold across zsh + pwsh (needs sibling dotfiles-Windows)
+	@./scripts/parity-check.sh
 
-# skip-guards is a prerequisite here, NOT in `lint`: it drives `make` itself, and nesting a
-# recursive make inside the lint graph is both surprising and slow. It is a behavioural
-# assertion about the Makefile, so it belongs with the behavioural tests.
-test-repo: skip-guards ## Run THIS repo's behavioral tests (bootstrap.sh, zsh loader, defaults.sh)
-	@./test/test-repo.sh
+freshness-dashboard: ## Compose the weekly fleet-health board (drift + integrity + pins) as markdown
+	@./scripts/freshness-dashboard.sh
 
-test-all: test-repo test ## Run repo-owned tests + the vendored Core harness
+hooks: ## Install the pre-commit hooks into this clone
+	@command -v pre-commit >/dev/null 2>&1 || { echo "pre-commit not found: pip install pre-commit"; exit 1; }
+	@pre-commit install
 
-bench: ## Measure Core shell-startup cost (set CORE_BENCH_BUDGET_MS to gate)
-	@cd core && ./scripts/bench-core.sh
+update-hooks: ## Bump pinned pre-commit hook revisions to upstream latest (pre-commit autoupdate)
+	@command -v pre-commit >/dev/null 2>&1 || { echo "pre-commit not found: pip install pre-commit"; exit 1; }
+	@pre-commit autoupdate
 
-brew-check: ## Verify every Brewfile formula/cask is installed (the reproducibility gate; run on macOS)
-	@command -v brew >/dev/null 2>&1 || { echo "  brew not found — run this on macOS"; exit 1; }
-	@brew bundle check --file=Brewfile --verbose
+update-plugins: ## Roll the pinned zsh-plugin SHAs in zsh/45-plugins.zsh to upstream HEAD (deliberate bump)
+	@./scripts/update-plugins.sh
 
-bootstrap: ## Install: symlinks + Homebrew + brew bundle (macOS)
-	@./bootstrap.sh
+update-nvim-plugins: ## Roll the pinned nvim plugin commits in nvim/lazy-lock.json forward (deliberate bump)
+	@./scripts/update-nvim-plugins.sh
 
-bootstrap-dry: ## Preview the installer plan (symlinks); change nothing
-	@./bootstrap.sh --links-only --dry-run
+update-tool-checksums: ## Recompute the pinned CI tool SHA-256s in tool-versions.env after a version bump
+	@./scripts/update-tool-checksums.sh
 
-doctor: ## Show what bootstrap would change + verify the lint toolchain
-	@./bootstrap.sh --links-only --dry-run || true
-	@$(MAKE) -s tools || true
+check-pins: ## Report whether the zsh-plugin + nvim pins are behind upstream (the weekly freshness gate)
+	@./scripts/update-plugins.sh --check && ./scripts/update-nvim-plugins.sh --check
 
-sync-core: ## Reminder: how the vendored Core subtree gets updated
-	@echo "  Normally nothing to run: a dotfiles-core release opens a sync PR here"
-	@echo "  automatically (sync-fanout.yml). Merge it, then:"
-	@echo "    ./bootstrap.sh --links-only   # re-wire any new/changed Core files"
-	@echo "    make test-repo                # prove the new Core still loads (exercises the loader)"
-	@echo "  By hand, take the RELEASED tag (never main) and regenerate the lock,"
-	@echo "  or core-integrity reports the fresh subtree as TAMPERED:"
-	@echo "    git subtree pull --prefix=core <remote>/dotfiles-core refs/tags/v4 --squash"
-	@echo "    make core-lock                # sync-core.sh does this for you upstream"
+check-modern: ## Check CI meets the modern floor (scripts/modern-baseline.yml) — also run inside `make audit`
+	@./scripts/check-modern.sh
 
-check: lint ## Alias for `lint`
+release: ## Cut a release: bump core.version + CHANGELOG, run the audit (usage: make release VERSION=X.Y.Z)
+	@./scripts/release.sh $(VERSION)
 
-tools: ## Verify the lint toolchain is installed
-	@for t in shellcheck shfmt; do \
-	  command -v $$t >/dev/null && echo "  ok  $$t" \
-	    || { echo "  MISSING $$t — run: brew bundle (or see Brewfile 'Dev: lint & format')"; exit 1; }; \
-	done
+tag: ## Release phase 1: commit core.version + CHANGELOG (creates NO tag — see publish)
+	@./scripts/tag-release.sh
+
+publish: ## Release phase 2: tag origin/main + push, AFTER the release PR has merged
+	@./scripts/tag-release.sh --publish
+
+release-notes: ## Draft a GitHub Release body from Conventional Commits since the last release (needs git-cliff)
+	@command -v git-cliff >/dev/null 2>&1 || { echo "git-cliff not found: cargo install git-cliff (or scoop/pkg). Config: cliff.toml"; exit 1; }
+	@_from=$$(git log --grep='^release v' --format=%H -1); \
+	  if [ -n "$$_from" ]; then git-cliff "$$_from..HEAD"; else git-cliff; fi
