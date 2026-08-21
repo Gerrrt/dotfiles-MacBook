@@ -1,4 +1,5 @@
-# Local commit-time lint gate. One-time setup:  pre-commit install
+# Local commit-time lint gate. Installed by a full ./bootstrap.sh run; if you skipped
+# that (or used --links-only), the one-time setup is:  pre-commit install
 # Mirrors the CI checks (see .github/workflows/ci.yml) so failures surface before push.
 #
 # core/ is a vendored git-subtree from dotfiles-core — excluded globally so hooks

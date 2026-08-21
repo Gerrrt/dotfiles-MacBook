@@ -101,7 +101,7 @@ brew "pinentry-mac"  # GUI pinentry for gpg on macOS
 # luacheck/stylua are here so you can run those checks locally before syncing Core.
 brew "shellcheck"    # static analysis for bash (bootstrap.sh, macos/defaults.sh, …)
 brew "shfmt"         # bash formatter (repo style: `shfmt -i 2`)
-brew "pre-commit"    # local commit-time lint gate — run `pre-commit install` once
+brew "pre-commit"    # local commit-time lint gate — bootstrap.sh runs `pre-commit install`
 brew "actionlint"    # GitHub Actions workflow linter
 brew "gitleaks"      # secret scanner — `make secrets` / pre-commit gate over the repo-owned tree
 brew "luacheck"      # Lua linter (core/nvim — uses core/nvim/.luacheckrc)

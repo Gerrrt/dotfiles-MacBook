@@ -11,9 +11,11 @@ directory is untracked by default.
 Treat that as a guard against **accident, not an absolute barrier**: ignore rules apply
 only to files git is not already tracking, and `git add -f` overrides them outright. The
 backstops for the deliberate or already-tracked case are `gitleaks`, which scans the
-repo-owned tree on every PR in CI and locally at commit time **once you have run
-`pre-commit install`** (the local hook is opt-in, CI is not), and GitHub's push protection,
-which is enabled on this repo.
+repo-owned tree on every PR in CI and locally at commit time via the `pre-commit` hook,
+and GitHub's push protection, which is enabled on this repo. A full `./bootstrap.sh` run
+installs that hook for you and reports it in its closing checklist; `--links-only` does
+not (it installs nothing), and neither does a clone you never bootstrapped — in those
+cases run `pre-commit install` yourself. CI is unconditional either way.
 
 The **installer is a different matter**, and it is the main reason this file exists.
 `bootstrap.sh` writes symlinks throughout `$HOME`, moves existing files aside, downloads
