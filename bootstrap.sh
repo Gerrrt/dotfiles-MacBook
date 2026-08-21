@@ -37,6 +37,15 @@ ONLY_RAW="" SKIP_RAW="" ONLY_SEEN=0 SKIP_SEEN=0
 # installer. brew_shellenv deliberately keeps its own hardcoded absolute prefixes: its job
 # is to FIND Homebrew, which is exactly what an override must not fake.
 BREW="${BOOTSTRAP_BREW:-brew}"
+# PRE_COMMIT — which pre-commit binary installs the repo's local commit-time hook. Same
+# seam, same reasoning as BREW above. This one is unavoidable rather than merely
+# convenient: the hook goes into $REPO, and $REPO is derived from this script's own
+# location, so unlike $HOME it CANNOT be pointed at a sandbox. Without the override,
+# test/test-repo.sh's full-run case would rewrite the contributor's own
+# .git/hooks/pre-commit as a side effect of running the tests — and since `make test-repo`
+# is itself one of the pre-commit hooks, that means rewriting the hook mid-commit. Aimed
+# at a stub the install path still runs and is still asserted on; it just does not touch git.
+PRE_COMMIT="${BOOTSTRAP_PRE_COMMIT:-pre-commit}"
 
 # usage() is a real function (heredoc) rather than `sed -n '2,18p' "$0"`: the old
 # form was coupled to header line numbers, so editing the banner silently drifted
@@ -299,6 +308,22 @@ warn_note() { # warn_note <message>  → record a non-fatal notice; exit code un
   info "$1"
 }
 
+# Closing checklist (#135). A bootstrap can finish cleanly and still leave a machine that
+# does not work: Karabiner and AeroSpace do nothing until macOS grants them GUI
+# permissions, and git refuses to commit while the seeded identity is still a placeholder.
+# None of that is a FAILURE — nothing bootstrap ran went wrong — so it belongs in neither
+# ledger above, and it must not touch the exit code. It is a third category: what is left
+# for a HUMAN to do, PROBED at the end of the run rather than hardcoded, so a re-run on a
+# finished box says nothing and the list never cries wolf.
+#
+# Two lists, because "you still have to do this" and "this is already done" answer
+# different questions: the first is the actionable checklist, the second is the evidence
+# that the steps bootstrap DID take (tmux plugins, the pre-commit hook) actually landed.
+NEXT_TODO=() # outstanding — printed with info()'s glyph, and exported in --json
+NEXT_DONE=() # verified done — printed with ok()'s glyph; human reassurance only
+todo_step() { NEXT_TODO+=("$1"); }
+done_step() { NEXT_DONE+=("$1"); }
+
 # JSON string/array serialisers for the --json ledger. Pure parameter expansion (bash
 # 3.2-safe, no subprocess) — there is deliberately no jq dependency on a fresh box.
 # The messages are ours, but they interpolate PATHS (`chsh -s $brew_zsh`), so escaping
@@ -325,6 +350,12 @@ json_array() { # json_array <item...>  → ["a","b"], or [] when given nothing
 # `ok` is the one-key verdict: true iff `errors` is empty. `warnings` are notices that do
 # NOT degrade the run (a tool that just needs a new shell), so they never clear `ok`.
 #
+# `next_steps` (#135) is the third channel: work left for a HUMAN — a GUI permission macOS
+# will only take from a person, a git identity only its owner can fill in. It never clears
+# `ok` either, because nothing failed; without it a fleet-provisioning script reading `ok`
+# alone would call a box finished while its keyboard remapper is still inert. Only the
+# OUTSTANDING items ship — the ✓ half of the checklist is human reassurance, not data.
+#
 # A FUNCTION, not the trailing block it used to be, because this script has more than one
 # way to end: --uninstall short-circuits the install path with its own `exit 0`, which sat
 # ABOVE the old inline emitter and so produced no object at all — even though n_removed /
@@ -344,11 +375,12 @@ emit_json() {
   ((${#FAILURES[@]})) && _ok=false
   # TOOLS_JSON is empty until verify_tools runs, which the uninstall path never does —
   # `"tools":{}` there is correct and means "no probe was taken", not "nothing present".
-  printf '{"dry_run":%s,"ok":%s,"linked":%d,"backed_up":%d,"seeded":%d,"skipped":%d,"removed":%d,"restored":%d,"tools":{%s},"errors":%s,"warnings":%s}\n' \
+  printf '{"dry_run":%s,"ok":%s,"linked":%d,"backed_up":%d,"seeded":%d,"skipped":%d,"removed":%d,"restored":%d,"tools":{%s},"errors":%s,"warnings":%s,"next_steps":%s}\n' \
     "$_dry" "$_ok" "$n_linked" "$n_backed" "$n_seeded" "$n_skipped" "$n_removed" "$n_restored" \
     "$TOOLS_JSON" \
     "$(json_array "${FAILURES[@]+"${FAILURES[@]}"}")" \
-    "$(json_array "${WARNINGS[@]+"${WARNINGS[@]}"}")" >&3
+    "$(json_array "${WARNINGS[@]+"${WARNINGS[@]}"}")" \
+    "$(json_array "${NEXT_TODO[@]+"${NEXT_TODO[@]}"}")" >&3
 }
 
 # print_summary — the run tally, factored out so the INT/TERM trap can show what was
@@ -380,6 +412,23 @@ print_summary() {
   printf '%s==>%s %s\n' "$c_b" "$c_0" "${1:-summary}"
   ok "$n_linked linked · $n_backed backed up · $n_seeded seeded · $n_skipped skipped"
   print_ledger
+}
+
+# print_next_steps — the #135 closing checklist. TODOs first (what a human must still do),
+# the ✓ items after (what bootstrap handled for you), so the eye lands on the actionable
+# half rather than scrolling past it. Bypasses the --quiet say() gate with a direct printf
+# for the same reason print_summary does: a quiet run is exactly the case where "your
+# keyboard remapper still needs a permission" is the one line worth printing.
+#
+# Silent when BOTH lists are empty — on a box that deselected the desktop and git groups
+# there is no checklist to give, and a bare header would be noise.
+print_next_steps() {
+  ((${#NEXT_TODO[@]} + ${#NEXT_DONE[@]})) || return 0
+  printf '%s==>%s %s\n' "$c_b" "$c_0" "next steps"
+  local m
+  for m in "${NEXT_TODO[@]+"${NEXT_TODO[@]}"}"; do info "$m"; done
+  for m in "${NEXT_DONE[@]+"${NEXT_DONE[@]}"}"; do ok "$m"; done
+  return 0 # a for-loop over an empty list yields the PREVIOUS status; be explicit
 }
 
 # Graceful interrupt: report the partial run + reassure that bootstrap is idempotent
@@ -753,6 +802,246 @@ verify_tools() {
   fi
 }
 
+# ── closing-checklist probes (#135) ───────────────────────────────────────────
+# What these can and cannot know: macOS keeps Accessibility and Input Monitoring grants in
+# the SYSTEM TCC database, which is unreadable without Full Disk Access — so there is no
+# honest way to ask "was this permission granted?" from a shell. Everything below is a
+# BEHAVIOURAL proxy, and each ✓ is therefore worded as the observation it actually made,
+# never as the conclusion you would like to draw from it. A checklist that overstates is
+# the same defect as a bootstrap that closes with "complete" over a machine that is dead.
+#
+# All read-only, all guarded on their tool existing, and all end on status 0: they are
+# called in statement position under `set -euo pipefail`, where a falsy last command in a
+# function aborts the whole run.
+
+# karabiner_ready — true when Karabiner's DriverKit extension is approved AND its per-user
+# server is alive. The extension approval is the half macOS will actually tell us about
+# (`systemextensionsctl list` reads fine unprivileged); a running console_user_server is
+# evidence the app has been opened and got far enough to launch its helpers.
+#
+# Input Monitoring is proven by NEITHER, which is why the ✓ that consumes this says
+# "driver extension approved and running" and stops there. Deliberately not `pgrep -x
+# karabiner_grabber`: the grabber is a root daemon that does not show up for a user pgrep
+# even on a fully working box, so keying off it would report every Mac as broken.
+karabiner_ready() {
+  command -v systemextensionsctl >/dev/null 2>&1 || return 1
+  systemextensionsctl list 2>/dev/null |
+    grep -q 'org.pqrs.Karabiner-DriverKit-VirtualHIDDevice.*activated enabled' || return 1
+  pgrep -x karabiner_console_user_server >/dev/null 2>&1
+}
+
+# check_desktop_permissions — the two GUI apps that are INERT until macOS grants them a
+# permission, and that report nothing when it hasn't been: hotkeys and tiling simply do
+# not happen, with no error to search for. Gated on the desktop group and on the app being
+# installed — a `--skip desktop` box has nothing to grant, and a box where the cask never
+# landed has a `brew bundle` failure already in the ledger saying so.
+check_desktop_permissions() {
+  blib_want desktop || return 0
+  if [[ -d /Applications/Karabiner-Elements.app ]]; then
+    if karabiner_ready; then
+      done_step "Karabiner driver extension approved and its user server is running"
+    else
+      todo_step "Karabiner-Elements — open it once, approve its driver extension, then grant it Input Monitoring (System Settings → Privacy & Security)"
+    fi
+  fi
+  if [[ -d /Applications/AeroSpace.app ]]; then
+    # Ask AeroSpace itself rather than pgrep for it: the CLI reaches the running server
+    # over a socket, so an answer proves the server is up AND responding. A process that
+    # launched and then stalled on a permission dialog does not answer.
+    if command -v aerospace >/dev/null 2>&1 && aerospace list-monitors >/dev/null 2>&1; then
+      done_step "AeroSpace is running and responding"
+    else
+      todo_step "AeroSpace is not responding — launch it and grant it Accessibility (System Settings → Privacy & Security → Accessibility)"
+    fi
+  fi
+  return 0
+}
+
+# check_git_identity — blib_seed copies core/git/local.gitconfig.example to
+# ~/.config/git/local.gitconfig on a fresh box, and the run then declares success. What is
+# left is a git that refuses to commit ("Please tell me who you are") with nothing in the
+# bootstrap log connecting the two (#135).
+#
+# Reads the SEEDED FILE, not the effective value: core/git/gitconfig carries `includeIf
+# gitdir:` blocks for ~/work and ~/clients, so `git config --get user.email` answers
+# differently depending on where it is run — from this repo it would miss a work identity,
+# and from ~/work it would mask an unset personal one.
+#
+# NB the placeholder is `Your Name` / `you@example.com`, the literal content of the example
+# file. It is NOT the string "FILL IN your name & email", which exists only as blib_seed's
+# one-line note at seed time and never reaches the file.
+check_git_identity() {
+  blib_want git || return 0
+  command -v git >/dev/null 2>&1 || return 0
+  local f="$HOME/.config/git/local.gitconfig" name="" email="" shown
+  shown="${f/#"$HOME"/\~}"
+  if [[ -f "$f" ]]; then
+    # `|| var=""`: a standalone assignment from a command substitution IS the command under
+    # `set -e`, and `git config` exits 1 on a missing key — so an unset user.email would
+    # abort the run one line before the checklist that exists to report it.
+    name="$(git config -f "$f" user.name 2>/dev/null)" || name=""
+    email="$(git config -f "$f" user.email 2>/dev/null)" || email=""
+  else
+    # Never seeded (--skip git, or a box predating the seed): the global config is then the
+    # only place an identity could live, and an empty answer there is the real problem.
+    name="$(git config --global user.name 2>/dev/null)" || name=""
+    email="$(git config --global user.email 2>/dev/null)" || email=""
+  fi
+  if [[ -z "$email" || "$email" == "you@example.com" || "$name" == "Your Name" ]]; then
+    if [[ -f "$f" ]]; then
+      todo_step "git identity is still the seeded placeholder — edit $shown, or: git config -f $shown user.email 'you@your.domain'"
+    else
+      todo_step "git identity is unset — git will refuse to commit; set it: git config --global user.email 'you@your.domain'"
+    fi
+  else
+    done_step "git identity set ($email)"
+  fi
+  return 0
+}
+
+# _tmux_plugin_count <plugins-dir> — how many plugins are installed, i.e. any directory in
+# there other than tpm itself. Cheap, and true of a hand-installed box too. Used twice: to
+# decide whether there is anything to do, and to VERIFY that doing it worked.
+_tmux_plugin_count() {
+  local n=""
+  n="$(find "$1" -mindepth 1 -maxdepth 1 -type d ! -name tpm 2>/dev/null | wc -l | tr -d ' ')" || n=""
+  printf '%s' "${n:-0}"
+}
+
+# install_tmux_plugins — tpm is cloned by the shared scaffold, but its plugins need a
+# manual `prefix + I` and nothing ever said so, so a fresh box came up with tmux and none
+# of the seven plugins tmux.conf declares (#135). tpm ships a headless entry point, so
+# bootstrap can simply do it.
+#
+# It CANNOT be called bare, and getting this wrong is silent. tpm resolves its install
+# directory from the TMUX_PLUGIN_MANAGER_PATH set on a tmux SERVER; core/tmux/tmux.conf
+# only ever sets that asynchronously, from its trailing `run '…/tpm/tpm'`. Reach tpm before
+# that fires and the value is empty, tpm does `cd "/"`, and every clone fails. `-f
+# /dev/null` is not a way out either: the @plugin LIST is read off the same config, so a
+# config-less server installs nothing at all.
+#
+# So: start a THROWAWAY server on a private socket (TMUX_TMPDIR), load the real config on
+# it so the @plugin list is present, and set the path explicitly. The operator's own tmux —
+# quite possibly the one they are running this from — is never touched, and the throwaway
+# server is killed on the way out.
+#
+# XDG_CONFIG_HOME is pinned for the same reason, and it is not paranoia: tpm derives its
+# own path from `${XDG_CONFIG_HOME:-$HOME/.config}/tmux` and re-sets it on the server as
+# the config loads, LATER than — and therefore over the top of — the set-environment below.
+# wire_links hardcodes $HOME/.config as the destination, so an inherited XDG_CONFIG_HOME
+# pointing at another tree would quietly aim the clones somewhere bootstrap never wired.
+install_tmux_plugins() {
+  local dir="$HOME/.config/tmux/plugins" tpm="$HOME/.config/tmux/plugins/tpm"
+
+  # Count FIRST, before requiring tpm's installer. Whether the plugins are there is a
+  # question about the plugins, not about tpm — gate the report on the installer and a box
+  # with working plugins but a half-cloned tpm silently drops off the checklist entirely.
+  local n
+  n="$(_tmux_plugin_count "$dir")"
+  if ((n > 0)); then
+    done_step "tmux plugins installed ($n)"
+    return 0
+  fi
+  # Nothing installed and no headless installer to run: a MISSING tpm is already ledgered
+  # as a failure by the caller, so stay quiet rather than say the same thing twice in two
+  # different voices.
+  [[ -x "$tpm/bin/install_plugins" ]] || return 0
+  if ! command -v tmux >/dev/null 2>&1; then
+    todo_step "tmux plugins are not installed — once tmux is on PATH, open it and press prefix + I"
+    return 0
+  fi
+
+  local sock=""
+  sock="$(mktemp -d)" || sock=""
+  if [[ -z "$sock" ]]; then
+    todo_step "tmux plugins are not installed — open tmux and press prefix + I"
+    return 0
+  fi
+  # local -x, not a `VAR=x cmd` prefix: bash keeps an assignment prefixed to a SHELL
+  # FUNCTION call (spin is one) in effect after that function returns, which would leak the
+  # throwaway socket into every later tmux command in this run. Scoped and exported here.
+  local -x TMUX_TMPDIR="$sock"
+  local -x XDG_CONFIG_HOME="$HOME/.config"
+  say "tmux plugins (tpm)"
+  # Neither call decides the outcome — the directory listing below does — so both are
+  # allowed to fail without aborting under `set -e`. spin already prints its captured log
+  # when the command fails, so a real breakage is on screen either way.
+  tmux -f "$HOME/.config/tmux/tmux.conf" start-server \; \
+    set-environment -g TMUX_PLUGIN_MANAGER_PATH "$dir/" 2>/dev/null || true
+  spin "installing tmux plugins" "$tpm/bin/install_plugins" || true
+  tmux kill-server 2>/dev/null || true
+  rm -rf "$sock"
+
+  # VERIFY rather than trust the exit code. tpm exits 0 having installed nothing whenever
+  # its idea of the plugin path differs from ours — and a ✓ printed over an empty directory
+  # is precisely the defect this checklist exists to stop. The listing is the ground truth.
+  n="$(_tmux_plugin_count "$dir")"
+  if ((n > 0)); then
+    done_step "tmux plugins installed ($n)"
+  else
+    # A WARNING, not a fail_note: tmux is perfectly usable without its plugins and the
+    # recovery is two keystrokes. Contrast the MISSING-tpm check in the run body, which is
+    # ledgered as a failure precisely because it leaves no plugin manager to press them in.
+    warn_note "tpm installed no tmux plugins — tmux still starts, just without them"
+    todo_step "tmux plugins are not installed — open tmux and press prefix + I"
+  fi
+  return 0
+}
+
+# install_pre_commit_hook — the Brewfile installs pre-commit and .pre-commit-config.yaml
+# defines the gate, but nothing ever ran `pre-commit install`, so the local commit-time
+# check — gitleaks included — did not exist until someone remembered (#135). That is also
+# what made SECURITY.md's "locally at commit time" caveat load-bearing.
+#
+# ORDER MATTERS, and it is why this is called from the run body AFTER wire_links rather
+# than from inside it. wire_links installs the core/ guard directly into
+# .git/hooks/pre-commit; pre-commit then moves that aside to pre-commit.legacy and goes on
+# executing it (its hook-impl runs an executable <hook>.legacy first), so both gates
+# survive. Reverse the order and blib_install_core_guard finds a foreign hook, declines to
+# overwrite it, and the clone ends up with no core/ guard at all.
+install_pre_commit_hook() {
+  command -v "$PRE_COMMIT" >/dev/null 2>&1 || return 0
+  [[ -f "$REPO/.pre-commit-config.yaml" ]] || return 0
+  git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+
+  # --git-path resolves the real hooks dir through worktrees and submodules, where it lives
+  # in the common git dir rather than under $REPO/.git — the same reasoning as the shared
+  # scaffold's blib_install_core_guard. The path comes back relative to $REPO.
+  local hooks="" hook legacy
+  hooks="$(git -C "$REPO" rev-parse --git-path hooks 2>/dev/null)" || hooks=""
+  [[ -n "$hooks" ]] || return 0
+  [[ "$hooks" == /* ]] || hooks="$REPO/$hooks"
+  hook="$hooks/pre-commit"
+  legacy="$hooks/pre-commit.legacy"
+
+  # pre-commit's generated hook carries this marker; the core/ guard has no such line, so
+  # it distinguishes "the framework hook is installed" from "some hook exists".
+  if grep -q '# start templated' "$hook" 2>/dev/null; then
+    done_step "pre-commit hook installed"
+  elif ((LINKS_ONLY)); then
+    # --links-only is promised as "just (re)create symlinks, no installs" by both usage()
+    # and the README, and writing a git hook is an install. Report the gap instead of
+    # closing it — the probe is still honest, a full run is what acts on it. This is also
+    # what keeps `make test-repo`, which does real --links-only applies against the actual
+    # working tree, from rewriting the contributor's own .git/hooks/pre-commit.
+    todo_step "the local lint + secret-scan gate is not active — run: pre-commit install"
+    return 0
+  elif (cd "$REPO" && "$PRE_COMMIT" install >/dev/null 2>&1); then
+    done_step "pre-commit hook installed — the local lint + gitleaks gate is now live"
+  else
+    warn_note "pre-commit install failed — the local commit-time gate (gitleaks included) is not active"
+    todo_step "the local lint + secret-scan gate is not active — run: pre-commit install"
+    return 0
+  fi
+  # Answers the now-stale blib_install_core_guard line printed back in wire_links ("already
+  # has a custom pre-commit hook — left as-is"). Once pre-commit owns the hook path the
+  # guard is still enforced, just from .legacy — say so, or the warning reads as a hole.
+  if grep -q 'dotfiles-core-guard' "$legacy" 2>/dev/null; then
+    info "core/ guard preserved as ${legacy/#"$REPO"/.} — pre-commit runs it first"
+  fi
+  return 0
+}
+
 # set_login_shell — opt-in (--set-shell). Make the Homebrew zsh the login shell,
 # idempotently: skip if it's already $SHELL, and only append to /etc/shells if the
 # path isn't already listed (chsh refuses a shell that isn't in there).
@@ -1122,6 +1411,19 @@ if ((DRY == 0)) && blib_want tmux && [[ ! -d "$HOME/.config/tmux/plugins/tpm" ]]
   fail_note "tpm (tmux plugin manager) is missing — tmux will start with no plugins; clone it manually, then press prefix + I"
 fi
 
+# tpm being present is not the same as the plugins being installed — that still needed a
+# manual `prefix + I`, which nothing told you about (#135). Do it headlessly instead; see
+# install_tmux_plugins for why it needs a tmux server of its very own. Read-only when the
+# plugins are already there, so a re-run just reports ✓.
+if ((DRY == 0)) && blib_want tmux; then
+  install_tmux_plugins
+fi
+
+# The local commit-time gate (#135). AFTER wire_links, and the order is load-bearing —
+# see install_pre_commit_hook: wire_links must plant the core/ guard FIRST so pre-commit
+# inherits it as pre-commit.legacy instead of locking it out.
+((DRY == 0)) && install_pre_commit_hook
+
 # Desktop services (sketchybar, borders) — see start_desktop_services above. Held out of
 # --links-only, which usage() and the README both promise is "just (re)create symlinks, no
 # installs"; skipped when the desktop group is deselected, since those are its binaries. Needs
@@ -1169,9 +1471,28 @@ fi
 # `mise install` just did. It also populates TOOLS_JSON for the --json object below.
 verify_tools
 
+# ── closing checklist (#135) ──────────────────────────────────────────────────
+# The read-only PROBES run here, at the very end, for the same reason verify_tools does:
+# they describe the FINISHED machine, and one taken earlier would cry wolf about a
+# permission the operator granted thirty seconds ago. The two steps bootstrap performs
+# itself — tmux plugins, the pre-commit hook — recorded their own outcome as they happened.
+#
+# Skipped wholesale in --dry-run: nothing ran, so every probe would report every step as
+# outstanding, and a plan that lies is worse than no plan. It also keeps this block
+# provably side-effect-free in the one mode that promises to touch nothing at all.
+if ((DRY == 0)); then
+  check_desktop_permissions
+  check_git_identity
+fi
+
 print_summary "summary"
+# Between the tally and the verdict: the checklist is part of the run REPORT, while the
+# closing line is the #133 verdict and has to stay the last word (its "see above" points
+# at the failure list print_summary just printed).
+print_next_steps
 if ((DRY)); then
   info "dry run — nothing above was actually changed; re-run without --dry-run to apply"
+  info "next steps (GUI permissions, git identity) are probed and reported after a real run"
 elif ((${#FAILURES[@]})); then
   # NOT ok "…complete" — the whole point of #133 is that a degraded run must not look
   # like a clean one. The failing steps are listed by print_summary just above.
