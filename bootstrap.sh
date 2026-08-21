@@ -653,25 +653,6 @@ link() { # link <src> <dest>
   n_linked=$((n_linked + 1))
 }
 
-# seed <src> <dest> <note> — copy (don't symlink) a starter file when the dest is
-# absent. Used for files the user is meant to EDIT locally (git identity, sesh).
-seed() {
-  local src="$1" dest="$2" note="$3"
-  [[ -f "$src" && ! -e "$dest" ]] || {
-    noop "${dest/#"$HOME"/\~} present (or example missing) — left as-is"
-    return 0
-  }
-  if ((DRY)); then
-    info "would seed: ${dest/#"$HOME"/\~}  ($note)"
-    n_seeded=$((n_seeded + 1))
-    return 0
-  fi
-  mkdir -p "$(dirname "$dest")"
-  cp "$src" "$dest"
-  info "seeded ${dest/#"$HOME"/\~} — $note"
-  n_seeded=$((n_seeded + 1))
-}
-
 # ── provision (Homebrew + packages) ──────────────────────────────────────────
 provision() {
   # STOP when the Command Line Tools are missing. `xcode-select --install` only SPAWNS a GUI
@@ -1514,6 +1495,6 @@ emit_json
 #
 # Deliberately CONDITIONAL, with no `exit 0` after it: a clean run still falls off the end
 # (a taken-no-branch `if` yields status 0). With an unconditional trailing `exit`, the
-# reachability pass in shellcheck declares on_interrupt (reached only via trap) and
-# seed() uninvoked, tripping SC2329 on code that was already there.
+# reachability pass in shellcheck declares on_interrupt — reached only via the INT/TERM
+# trap, which it cannot see — uninvoked, tripping SC2329 on code that was already there.
 if ((${#FAILURES[@]})); then exit 3; fi
