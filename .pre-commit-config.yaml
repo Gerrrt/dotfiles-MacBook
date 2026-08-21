@@ -26,10 +26,38 @@ repos:
         exclude: '\.jsonc$'
       - id: check-toml
 
-  - repo: https://github.com/koalaman/shellcheck-precommit
-    rev: v0.10.0
+  # shellcheck runs through `make shellcheck` — the SAME command ci.yml runs — rather than
+  # koalaman/shellcheck-precommit, whose `shellcheck` id is a `language: docker_image`
+  # hook. With no Docker daemon that hook does not skip, it ERRORS
+  # (`CalledProcessError: Executable 'docker' not found`) and blocks the commit outright,
+  # so on a box without Docker the local gate could not run AT ALL — the exact inverse of
+  # what this file exists for. Nothing here ever needed Docker: the Brewfile installs
+  # shellcheck, and CI runs `make shellcheck` against a SHA-256-verified binary.
+  #
+  # It also finishes what #160 started. That change made the repo-root .shellcheckrc the
+  # ONE shellcheck config "so author-time, CI, and the editor all lint identically" — but
+  # a pinned v0.10.0 container is a third toolchain that the local `shellcheck` and CI's
+  # verified 0.11.0 are not. Going through make leaves one command and one config.
+  #
+  # And it drops a second, UNGATED source of version truth: core/scripts/tool-versions.env
+  # is canonical (SHELLCHECK_VERSION=0.11.0) and Core's audit asserts the rev fields — but
+  # that audit runs `cd core` first, so THIS file was never covered and its pin had already
+  # drifted to v0.10.0 unnoticed. Deferring to the installed binary leaves nothing to drift.
+  #
+  # Deliberately NOT version-gated. A contributor whose shellcheck trails CI's gets a
+  # weaker local check, never a wrong one, and CI is still unconditional — whereas a hard
+  # minimum would swap today's hard-fail (no Docker) for a new one (brew a fortnight
+  # behind), which is the failure mode this change exists to remove.
+  - repo: local
     hooks:
       - id: shellcheck
+        name: shellcheck (repo-owned bash)
+        entry: make shellcheck
+        language: system
+        pass_filenames: false
+        # Mirrors SH_FILES in the Makefile: every *.sh outside core/ (excluded globally
+        # above) plus the two bash entry points that carry no .sh extension.
+        files: '(\.sh$|^sketchybar/sketchybarrc$|^borders/bordersrc$)'
 
   - repo: https://github.com/scop/pre-commit-shfmt
     rev: v3.10.0-2
