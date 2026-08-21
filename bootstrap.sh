@@ -945,7 +945,21 @@ start_desktop_services() {
       # A WARNING, not a fail_note: the AeroSpace fallback still launches it in this
       # session, so a service that would not register must not turn an otherwise-clean
       # install into a degraded run (exit 3).
-      warn_note "could not start the $svc service — AeroSpace still launches it, but it won't come up on login; try by hand: brew services start $svc"
+      #
+      # Name the STRAY when there is one, because "try by hand: brew services start" is
+      # useless advice in that case — it is the command that just failed, and it will keep
+      # failing. Every box that predates this change hits it: the old aerospace.toml
+      # launched these bare, so a copy is already holding the singleton (sketchybar's
+      # lock file, borders' running-instance check) and `launchctl bootstrap` dies with
+      # EIO. The stray must go first, and killing a process the operator can see is their
+      # call to make, not something bootstrap should do behind their back.
+      local stray
+      stray="$(pgrep -x "$svc" | tr '\n' ' ')" || stray=""
+      if [[ -n "${stray// /}" ]]; then
+        warn_note "could not start the $svc service — a running $svc (pid ${stray% }) is already holding it; stop that first, then retry: pkill -x $svc && brew services start $svc"
+      else
+        warn_note "could not start the $svc service — AeroSpace still launches it, but it won't come up on login; try by hand: brew services start $svc"
+      fi
     fi
   done
   # Only worth saying when something was already up: a service reads its config exactly once,
