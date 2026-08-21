@@ -1,46 +1,40 @@
 ---
 name: Bug report
-about: Something in the macOS layer is broken — installer, shell, or desktop tooling
+about: A Core file is broken, behaves wrong, or fails the audit
 title: "bug: "
 labels: bug
 ---
 
 <!--
-Boundary check first: core/ is a VENDORED copy of dotfiles-core. If the broken file is
-under core/, please file it against dotfiles-core instead — a fix here is overwritten on
-the next sync. See CONTRIBUTING.md.
+Reminder: this is the Core layer, vendored into nine OS repos via git subtree.
+If the problem is OS-specific (package manager, paths, clipboard) it belongs in
+the OS repo; if it's offensive/engagement tooling, it belongs in dotfiles-Offense.
+See CONTRIBUTING.md for the three-layer test.
 -->
 
 ## What's wrong
 
-A clear description.
+A clear description of the bug.
 
-## Which file(s)
+## Which Core file(s)
 
-e.g. `bootstrap.sh`, `os/macos.zsh`, `sketchybar/plugins/battery.sh`, `macos/defaults.sh`
+e.g. `zsh/00-tools.zsh`, `scripts/audit-core.sh`, `nvim/lua/gerrrt/...`
 
 ## How to reproduce
 
-```console
-$ ./bootstrap.sh --links-only --dry-run
-...
+Steps, or a minimal command. If it's a load-order/runtime break, the output of:
+
+```bash
+./scripts/audit-core.sh        # the one gate
+./scripts/test-core.sh         # behavioral (load-order + function units)
 ```
 
 ## Expected vs actual
 
+What you expected, and what happened instead.
+
 ## Environment
 
-- macOS version:
-- Chip (Apple Silicon / Intel):
-- Homebrew prefix (`/opt/homebrew` or `/usr/local`):
-- `zsh --version`:
-- Clone path (the repo does not assume `~/dotfiles-MacBook`):
-
-## Gate output
-
-<!-- Where relevant. Note `make test` and `make core-audit` each take ~6 minutes on
-     macOS and go near-silent partway through — that is normal, not a hang. -->
-
-```console
-$ make lint
-```
+- OS / distro:
+- zsh version (`zsh --version`):
+- Relevant tool versions (shellcheck, luacheck, …):
