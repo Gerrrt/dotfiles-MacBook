@@ -169,6 +169,21 @@ jobs:
       - name: zsh -n (syntax)
         run: make zsh-syntax
 
+      # A bash RETURN trap is a GLOBAL slot, not a function-scoped one: armed inside a
+      # function it survives into the CALLER's frame and fires again on ITS return, where
+      # the local it cleans up is out of scope and `set -u` makes it fatal. That aborted
+      # dotfiles-Debian's bootstrap after every package installed but before wire_links ran
+      # (dotgibson/dotfiles-Debian#2). The two steps above CANNOT see it — the broken line
+      # is valid bash — which is why it is its own leg.
+      #
+      # Core v4.14.0 ships this rule as a blocking leg of the reusable lint-call.yml. This
+      # repo does not call that workflow (its gate is fuller: gitleaks, markdownlint, config
+      # parsing, pin checks), so the rule is PORTED rather than inherited — reusing the
+      # vendored _core_return_trap_hits, not a copy of it. See #154; dotfiles-core#564
+      # tracks the general problem of these two gates drifting apart.
+      - name: RETURN-trap discipline
+        run: make trap-guard
+
       - name: repo behavioral tests (bootstrap, loader, defaults)
         run: make test-repo
 
