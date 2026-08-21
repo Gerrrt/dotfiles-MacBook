@@ -27,7 +27,7 @@ ZSH_FILES := zsh/zshenv zsh/zprofile zsh/zshrc os/macos.zsh
 .PHONY: help lint fmt fmt-check shellcheck syntax zsh-syntax check core-advisory \
         tools test test-repo test-all bench bootstrap bootstrap-dry doctor sync-core \
         core-audit verify-core core-lock brew-check secrets config-check markdownlint pins-check \
-        trap-guard
+        trap-guard skip-guards
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -48,10 +48,17 @@ syntax: ## `bash -n` syntax gate on every repo-owned script
 	@for f in $(SH_FILES); do bash -n "$$f" || exit 1; done
 	@echo "syntax ok:"; printf '  %s\n' $(SH_FILES)
 
+# ONE RECIPE LINE, DELIBERATELY — do not split the guard from the work. Every line of a
+# make recipe runs in its OWN shell, so a guard that ends in `exit 0` exits only ITS line;
+# make reads that as success and runs the next line, calling the very tool just reported
+# missing. That is #156: all three of these printed "skip …" and then failed anyway, so
+# `make lint` could not pass on a box without gitleaks, zsh or npx — the exact boxes the
+# guards exist for. (`brew-check` escaped it only because its guard uses `exit 1`, which
+# fails the line and aborts the target.) test/check-skip-guards.sh pins this.
 zsh-syntax: ## `zsh -n` syntax gate on repo-owned zsh modules (skips if zsh absent)
-	@command -v zsh >/dev/null 2>&1 || { echo "  skip zsh-syntax (zsh not installed)"; exit 0; }
-	@for f in $(ZSH_FILES); do zsh -n "$$f" || exit 1; done
-	@echo "zsh syntax ok:"; printf '  %s\n' $(ZSH_FILES)
+	@if ! command -v zsh >/dev/null 2>&1; then echo "  skip zsh-syntax (zsh not installed)"; exit 0; fi; \
+	 for f in $(ZSH_FILES); do zsh -n "$$f" || exit 1; done; \
+	 echo "zsh syntax ok:"; printf '  %s\n' $(ZSH_FILES)
 
 # Repo-owned secret scan. Core's audit runs gitleaks over core/ ONLY, so this repo's own
 # tree — Brewfile, os/, zsh/, ssh/config, sketchybar/, macos/defaults.sh — was never
@@ -60,8 +67,9 @@ zsh-syntax: ## `zsh -n` syntax gate on repo-owned zsh modules (skips if zsh abse
 # (GITLEAKS_VERSION/GITLEAKS_SHA256); CI installs that exact build via setup-core-tools.
 # Self-skips when gitleaks is absent so `make lint` still works on a bare box.
 secrets: ## Scan the working tree for committed secrets (gitleaks; skips if not installed)
-	@command -v gitleaks >/dev/null 2>&1 || { echo "  skip secrets (gitleaks not installed — brew bundle)"; exit 0; }
-	@gitleaks dir . --no-banner --redact
+	@# One recipe line — see the note above zsh-syntax (#156).
+	@if ! command -v gitleaks >/dev/null 2>&1; then echo "  skip secrets (gitleaks not installed — brew bundle)"; exit 0; fi; \
+	 gitleaks dir . --no-banner --redact
 
 # Parse-gate the JSON/JSONC/TOML the macOS desktop layer is made of. Nothing checked these
 # before: a malformed karabiner.json or aerospace.toml passed every gate and only failed on
@@ -74,6 +82,9 @@ trap-guard: ## Refuse a RETURN trap that does not disarm itself (shellcheck cann
 	@# the VENDORED _core_return_trap_hits, not a copy: see the script's header, #154.
 	@./test/check-return-traps.sh $(SH_FILES)
 
+skip-guards: ## Assert the "skips if not installed" targets actually skip (regression gate for #156)
+	@./test/check-skip-guards.sh
+
 config-check: ## Parse every repo-owned .json/.jsonc/.toml (karabiner, aerospace, fastfetch, renovate)
 	@./test/check-configs.sh
 
@@ -82,8 +93,9 @@ config-check: ## Parse every repo-owned .json/.jsonc/.toml (karabiner, aerospace
 # is version-pinned from the vendored tool-versions.env and run through npx. Self-skips
 # without node so `make lint` still works on a bare box.
 markdownlint: ## Lint repo-owned markdown against .markdownlint.jsonc (skips without node)
-	@command -v npx >/dev/null 2>&1 || { echo "  skip markdownlint (node/npx not installed)"; exit 0; }
-	@v="$$(sed -n 's/^MARKDOWNLINT_VERSION=//p' core/scripts/tool-versions.env | head -n1)"; \
+	@# One recipe line — see the note above zsh-syntax (#156).
+	@if ! command -v npx >/dev/null 2>&1; then echo "  skip markdownlint (node/npx not installed)"; exit 0; fi; \
+	 v="$$(sed -n 's/^MARKDOWNLINT_VERSION=//p' core/scripts/tool-versions.env | head -n1)"; \
 	 npx --yes "markdownlint-cli2@$${v:-latest}" "*.md" "sketchybar/*.md" >/dev/null \
 	   && echo "  markdownlint ok" \
 	   || { npx --yes "markdownlint-cli2@$${v:-latest}" "*.md" "sketchybar/*.md"; exit 1; }
@@ -136,7 +148,10 @@ core-lock: ## Regenerate core.lock from the vendored subtree-split (after a MANU
 test: ## Run the vendored Core regression harness (self-skips without zsh)
 	@cd core && ./scripts/test-core.sh
 
-test-repo: ## Run THIS repo's behavioral tests (bootstrap.sh, zsh loader, defaults.sh)
+# skip-guards is a prerequisite here, NOT in `lint`: it drives `make` itself, and nesting a
+# recursive make inside the lint graph is both surprising and slow. It is a behavioural
+# assertion about the Makefile, so it belongs with the behavioural tests.
+test-repo: skip-guards ## Run THIS repo's behavioral tests (bootstrap.sh, zsh loader, defaults.sh)
 	@./test/test-repo.sh
 
 test-all: test-repo test ## Run repo-owned tests + the vendored Core harness
