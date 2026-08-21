@@ -26,13 +26,14 @@ ZSH_FILES := zsh/zshenv zsh/zprofile zsh/zshrc os/macos.zsh
 
 .PHONY: help lint fmt fmt-check shellcheck syntax zsh-syntax check core-advisory \
         tools test test-repo test-all bench bootstrap bootstrap-dry doctor sync-core \
-        core-audit verify-core core-lock brew-check secrets config-check markdownlint pins-check
+        core-audit verify-core core-lock brew-check secrets config-check markdownlint pins-check \
+        trap-guard
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-15s\033[0m %s\n",$$1,$$2}'
 
-lint: shellcheck fmt-check syntax zsh-syntax config-check markdownlint secrets pins-check ## Run all gating checks (shell + format + syntax + configs + markdown + secrets + core pins)
+lint: shellcheck fmt-check syntax zsh-syntax trap-guard config-check markdownlint secrets pins-check ## Run all gating checks (shell + format + syntax + trap discipline + configs + markdown + secrets + core pins)
 
 shellcheck: ## Static analysis of repo-owned bash
 	@shellcheck $(SH_FILES)
@@ -65,6 +66,14 @@ secrets: ## Scan the working tree for committed secrets (gitleaks; skips if not 
 # Parse-gate the JSON/JSONC/TOML the macOS desktop layer is made of. Nothing checked these
 # before: a malformed karabiner.json or aerospace.toml passed every gate and only failed on
 # the next fresh install, silently killing the keyboard remap or the tiling WM.
+trap-guard: ## Refuse a RETURN trap that does not disarm itself (shellcheck cannot see this)
+	@# A bash RETURN trap is a GLOBAL slot, not a function-scoped one: armed inside a
+	@# function it survives into the CALLER's frame and fires again on ITS return, where
+	@# the local it cleans up is gone and `set -u` kills the script. Valid bash, so
+	@# shellcheck and `bash -n` both pass it — hence a dedicated scan. The rule itself is
+	@# the VENDORED _core_return_trap_hits, not a copy: see the script's header, #154.
+	@./test/check-return-traps.sh $(SH_FILES)
+
 config-check: ## Parse every repo-owned .json/.jsonc/.toml (karabiner, aerospace, fastfetch, renovate)
 	@./test/check-configs.sh
 
