@@ -260,6 +260,73 @@ jobs:
       - name: Workflow SHA pins match the vendored Core
         run: make pins-check
 
+  # ── file hygiene: the upstream pre-commit hooks CI never ran ─────────────────
+  # .pre-commit-config.yaml has always carried nine upstream file-hygiene hooks
+  # (whitespace, EOF newlines, line endings, merge markers, shebang↔exec-bit, yaml/json/
+  # toml well-formedness). NOTHING ran them. CI drives `make` targets and never invokes
+  # pre-commit at all, so those nine existed only on a contributor's box — and there only
+  # over the files a commit CHANGES. Anything already wrong was invisible to both halves:
+  # CI never looked, and locally it was never in the changed set until someone happened to
+  # edit that file, at which point it blocked THEIR commit for a defect they had not
+  # introduced. That is exactly how #164 (a shebang with no exec bit) and #165 (trailing
+  # blank lines that end-of-file-fixer silently re-fixed on every full run) both sat in the
+  # tree unnoticed until `pre-commit run --all-files` was typed by hand during #163.
+  #
+  # PORTED from Core's own `precommit` job, not reinvented — the same idiom as the
+  # RETURN-trap gate above (#154): this repo does not call Core's reusable workflows, so a
+  # rule it wants has to be carried across rather than inherited. Running the REAL config
+  # is the whole point; a reimplementation would be one more thing to drift.
+  #
+  # UNCONDITIONAL, unlike `shell lint`. File hygiene applies to every tracked file, and the
+  # `changes` filter marks `*.md` inert — so a docs-only PR skips every other leg. Those are
+  # precisely the files that collect trailing whitespace, and `--all-files` means the check
+  # is over the whole tree regardless of what the PR touched.
+  #
+  # The SKIP list is every hook CI ALREADY runs as a make step, one-to-one and verifiable
+  # against the steps above: shellcheck/shfmt (`make shellcheck`, `make fmt-check`),
+  # zsh-syntax, gitleaks (`make secrets`), config-check, markdownlint, test-repo, pins-check
+  # (in `verify vendored core`), and actionlint (its own job below). Skipping them keeps
+  # this the fast lane and — for shfmt specifically — stops pre-commit fetching its own
+  # UNPINNED copy of a tool the shell job takes care to install SHA-256-verified.
+  #
+  # Note the drift direction, which is the safe one: a NEW upstream hook added to the
+  # config is picked up here automatically, because this runs everything it is not told to
+  # skip. A new LOCAL hook merely runs twice, or fails loudly for a tool this job does not
+  # install — never silently unchecked.
+  precommit:
+    name: file hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Single source of truth for the pinned pre-commit version, same as every other job.
+      - name: Load pinned tool versions (vendored Core single source)
+        run: grep -E '^[A-Z0-9_]+=' core/scripts/tool-versions.env >> "$GITHUB_ENV"
+
+      # Cache the hook environments pre-commit clones + builds, keyed on the config so a
+      # hook-rev bump (or a new hook) rotates the key automatically.
+      - name: Cache pre-commit hooks
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      # pipx is preinstalled on the runner and installs to ~/.local/bin (already on PATH),
+      # sidestepping PEP-668 "externally-managed-environment" pip errors.
+      - name: Install pre-commit (pinned)
+        run: pipx install "pre-commit==${PRECOMMIT_VERSION}"
+
+      # --show-diff-on-failure matters here: the hygiene hooks FIX rather than only report,
+      # so on a red run the diff IS the remedy — a contributor can apply it without
+      # reproducing the environment.
+      - name: Run hygiene hooks (make-owned hooks skipped)
+        env:
+          SKIP: shellcheck,shfmt,actionlint,zsh-syntax,gitleaks,config-check,pins-check,markdownlint,test-repo
+        run: pre-commit run --all-files --show-diff-on-failure
+
   actionlint:
     name: actionlint
     runs-on: ubuntu-latest
@@ -372,7 +439,7 @@ jobs:
   ci-ok:
     name: ci ok
     if: always()
-    needs: [changes, shell, core-regression, verify-core, actionlint, macos]
+    needs: [changes, shell, core-regression, verify-core, actionlint, macos, precommit]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
