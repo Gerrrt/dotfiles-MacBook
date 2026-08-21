@@ -31,4 +31,3 @@ export NOTES_DIR="${NOTES_DIR:-$HOME/Notes}"
 # user-local bin (clip, mise shims) on PATH for all shells. `typeset -U path` (above)
 # collapses duplicates, so a plain prepend to the `path` array can't stack up.
 path=("$HOME/.local/bin" $path)
-

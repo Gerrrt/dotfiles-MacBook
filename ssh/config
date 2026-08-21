@@ -79,5 +79,3 @@ Host gitlab.com
 #   User <user>
 #   Port 22
 #   IdentityFile ~/.ssh/id_ed25519_personal
-
-
