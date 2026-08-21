@@ -38,7 +38,7 @@ What belongs **here** is only the OS-native layer: the `Brewfile`, OS overlays, 
 - `zsh/zshenv`, `zsh/zprofile`, `zsh/zshrc` — the loader entry points (symlinked to `~/.zshenv`/`~/.config/zsh/`)
 - `os/macos.zsh`, `os/macos.conf`, `os/macos.gitconfig` — OS overlays
 - `macos/defaults.sh` — `defaults write` system-preferences script (`bootstrap.sh --macos-defaults`)
-- `aerospace/`, `sketchybar/`, `karabiner/`, `ghostty/` — macOS desktop tooling
+- `aerospace/`, `sketchybar/`, `borders/`, `karabiner/`, `ghostty/` — macOS desktop tooling
 - `fastfetch/config.jsonc` — system/host info banner, Tokyo Night Storm (matches `sketchybar/colors.sh`); `ff` alias
 - `completions/` — shell completion files
 - `ssh/config` — ssh client config (only this file is tracked; keys never are)

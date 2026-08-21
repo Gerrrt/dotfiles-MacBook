@@ -227,12 +227,12 @@ WIRE_STEP=0
 #   1  Core + macOS overlay (shared scaffold)        — always
 #   +1 zsh entry layer                               — blib_want zsh
 #   +1 git ignore (macOS)                            — blib_want git
-#   +5 ghostty, fastfetch, aerospace, sketchybar, karabiner — blib_want desktop
+#   +6 ghostty, fastfetch, aerospace, sketchybar, borders, karabiner — blib_want desktop
 # (Selection is already applied above via blib_select.)
 WIRE_TOTAL=1
 blib_want zsh && WIRE_TOTAL=$((WIRE_TOTAL + 1))
 blib_want git && WIRE_TOTAL=$((WIRE_TOTAL + 1))
-blib_want desktop && WIRE_TOTAL=$((WIRE_TOTAL + 5))
+blib_want desktop && WIRE_TOTAL=$((WIRE_TOTAL + 6))
 true # keep the last conditional from setting a non-zero status under `set -e`
 step() {
   WIRE_STEP=$((WIRE_STEP + 1))
@@ -859,6 +859,13 @@ wire_links() {
     # under `set -e` after links are already wired — matches the scaffold's guarded chmods.
     run chmod +x "$REPO"/sketchybar/sketchybarrc "$REPO"/sketchybar/plugins/*.sh 2>/dev/null || true
 
+    step "borders (focused-window ring)"
+    # bordersrc is the config AND the launcher: started bare — which is how the brew service
+    # starts it — `borders` executes ~/.config/borders/bordersrc on launch. Linked as a
+    # directory to mirror sketchybar/ above, so a second file here needs no bootstrap change.
+    link "$REPO/borders" "$CFG/borders"
+    run chmod +x "$REPO"/borders/bordersrc 2>/dev/null || true
+
     step "karabiner (keyboard)"
     link "$REPO/karabiner/karabiner.json" "$CFG/karabiner/karabiner.json"
   fi
@@ -884,6 +891,81 @@ wire_links() {
     blib_install_core_guard "$REPO" ||
       warn_note "core/ pre-commit guard not installed — hand-edits to core/ won't be caught locally (CI's core-integrity still will)"
   fi
+}
+
+# ── desktop services: sketchybar + borders under launchd (#134) ───────────────
+# Installing them was never enough. Nothing here registered or started either one, and the
+# only thing that ever launched them — aerospace.toml's after-startup-command — is itself a
+# launchd-started GUI app with no /opt/homebrew/bin on PATH, so the bare command names
+# resolved to nothing and exec-and-forget swallowed it. A fresh box came up with no menu bar,
+# no focus ring, and not one error anywhere.
+#
+# `brew services` is the right owner, and not merely a second launcher: both formulae ship a
+# `service` block with keep_alive (start at login, restart on crash, independent of whether
+# AeroSpace is running) and PATH=std_service_path_env. That PATH is the load-bearing part —
+# every plugin under sketchybar/plugins/ calls bare `sketchybar`, and they inherit it from
+# the service. AeroSpace keeps its own PATH-prefixed commands as a fallback for a box where
+# these were never registered; both binaries self-detect a running instance, so the overlap
+# is harmless.
+#
+# Idempotent BY INSPECTION, not by retry: `brew services start` against a live service is a
+# restart in all but name, and a re-run of bootstrap must not blink the operator's menu bar
+# mid-session. So ask first and start only what is not already up.
+start_desktop_services() {
+  say "desktop services (launchd via brew services)"
+  # ONE `brew services list` for both lookups — it stats every plist and is easily the
+  # slowest thing in this function. On failure it stays empty, which reads as "neither is
+  # started" and earns each a start attempt: the safe direction to be wrong in, since
+  # starting an already-started service is redundant rather than destructive.
+  #
+  # Queried in --dry-run TOO. It is a read-only probe, and skipping it would make the plan
+  # lie in the common case: a provisioned box would be told bootstrap "would start" a bar
+  # that has been running for weeks.
+  local listing=""
+  listing="$("$BREW" services list 2>/dev/null)" || listing=""
+  local svc status hint=0
+  for svc in sketchybar borders; do
+    # Column 2 of the row whose column 1 is the service name: none|started|stopped|error|…
+    # `|| status=""` because a standalone assignment from a pipeline IS the command under
+    # `set -euo pipefail` — a non-zero awk would abort the whole run here (see the same trap
+    # documented at the `brew bundle list` call in provision).
+    status="$(printf '%s\n' "$listing" | awk -v s="$svc" '$1 == s { print $2; exit }')" || status=""
+    if [[ "$status" == "started" ]]; then
+      noop "$svc service already started"
+      hint=1
+      continue
+    fi
+    if ((DRY)); then
+      info "would run: $BREW services start $svc"
+      continue
+    fi
+    if "$BREW" services start "$svc" >/dev/null 2>&1; then
+      ok "$svc registered with launchd — starts at login, restarts on crash"
+    else
+      # A WARNING, not a fail_note: the AeroSpace fallback still launches it in this
+      # session, so a service that would not register must not turn an otherwise-clean
+      # install into a degraded run (exit 3).
+      #
+      # Name the STRAY when there is one, because "try by hand: brew services start" is
+      # useless advice in that case — it is the command that just failed, and it will keep
+      # failing. Every box that predates this change hits it: the old aerospace.toml
+      # launched these bare, so a copy is already holding the singleton (sketchybar's
+      # lock file, borders' running-instance check) and `launchctl bootstrap` dies with
+      # EIO. The stray must go first, and killing a process the operator can see is their
+      # call to make, not something bootstrap should do behind their back.
+      local stray
+      stray="$(pgrep -x "$svc" | tr '\n' ' ')" || stray=""
+      if [[ -n "${stray// /}" ]]; then
+        warn_note "could not start the $svc service — a running $svc (pid ${stray% }) is already holding it; stop that first, then retry: pkill -x $svc && brew services start $svc"
+      else
+        warn_note "could not start the $svc service — AeroSpace still launches it, but it won't come up on login; try by hand: brew services start $svc"
+      fi
+    fi
+  done
+  # Only worth saying when something was already up: a service reads its config exactly once,
+  # at launch, so a freshly-relinked sketchybarrc/bordersrc is NOT live until it is bounced.
+  ((hint)) && info "config is read only at launch — after a config change: brew services restart sketchybar borders"
+  return 0 # the `((hint))` above is the last command; a zero hint must not fail the step
 }
 
 # ── uninstall: reverse the symlink wiring + restore backups (B4) ──────────────
@@ -982,7 +1064,8 @@ uninstall() {
     "$HOME/.gitconfig" "$CFG/git/os.gitconfig" "$CFG/git/ignore"
     "$CFG/mise/config.toml" "$CFG/jj/config.toml" "$CFG/atuin/config.toml"
     "$CFG/ghostty/config" "$CFG/fastfetch/config.jsonc" "$HOME/.ssh/config"
-    "$CFG/aerospace/aerospace.toml" "$CFG/sketchybar" "$CFG/karabiner/karabiner.json"
+    "$CFG/aerospace/aerospace.toml" "$CFG/sketchybar" "$CFG/borders"
+    "$CFG/karabiner/karabiner.json"
   )
   local f
   for f in "$REPO"/core/zsh/*.zsh; do dests+=("$CFG/zsh/$(basename "$f")"); done
@@ -993,6 +1076,11 @@ uninstall() {
   print_ledger
   ((DRY)) && info "dry run — nothing was changed; re-run without --dry-run to apply"
   info "left in place: Homebrew + packages, your login shell, and ~/.config/{zsh/99-local.zsh,git/local.gitconfig}"
+  # The launchd agents start_desktop_services registered are NOT torn down here, and that is
+  # deliberate: `brew services` is USER-global and ignores $HOME, so an uninstall aimed at a
+  # sandbox HOME (test/test-repo.sh does exactly that) would stop the real operator's menu bar.
+  # Name the command instead and let them decide.
+  info "still running: the sketchybar + borders launchd agents — stop them with: brew services stop sketchybar borders"
   # Same contract as the install path: a partial reversal must not read like a clean one.
   # The dests that DID come out are listed above; these are the ones still wired.
   if ((${#FAILURES[@]})); then
@@ -1032,6 +1120,16 @@ wire_links
 # isn't. Skipped in --dry-run (nothing was cloned) and when tmux isn't in the selection.
 if ((DRY == 0)) && blib_want tmux && [[ ! -d "$HOME/.config/tmux/plugins/tpm" ]]; then
   fail_note "tpm (tmux plugin manager) is missing — tmux will start with no plugins; clone it manually, then press prefix + I"
+fi
+
+# Desktop services (sketchybar, borders) — see start_desktop_services above. Held out of
+# --links-only, which usage() and the README both promise is "just (re)create symlinks, no
+# installs"; skipped when the desktop group is deselected, since those are its binaries. Needs
+# Homebrew on PATH to ask about or register anything — a --no-brew box never got the formulae.
+# Runs AFTER wire_links on purpose: borders reads ~/.config/borders/bordersrc at launch, so the
+# symlink has to exist before the service starts or the ring comes up with stock defaults.
+if ((LINKS_ONLY == 0)) && blib_want desktop && command -v "$BREW" >/dev/null 2>&1; then
+  start_desktop_services
 fi
 
 # mise tools — install behind a spinner: it can churn for a while pulling runtimes,

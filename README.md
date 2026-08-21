@@ -196,7 +196,7 @@ prompt — comes from vendored Core; this repo owns the macOS specifics:
 - `Brewfile` — Homebrew packages (CLI + casks + fonts), the source of truth
 - `os/macos.zsh`, `os/macos.gitconfig`, `os/macos.conf` — the macOS overlays
 - `macos/defaults.sh` — the `defaults write` system-preferences script (opt-in)
-- `aerospace/`, `sketchybar/`, `karabiner/`, `ghostty/`, `fastfetch/` — the desktop + terminal tooling
+- `aerospace/`, `sketchybar/`, `borders/`, `karabiner/`, `ghostty/`, `fastfetch/` — the desktop + terminal tooling
 - `core/` — vendored from `dotfiles-core` (read-only here; edit upstream)
 
 The things worth knowing — Homebrew on `/opt/homebrew` vs `/usr/local`, the native

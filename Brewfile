@@ -122,7 +122,7 @@ brew "fastfetch"     # system/host info banner (os/macos.zsh aliases ff → fast
 # Fully-qualified names auto-tap on install — no separate `tap` lines needed.
 cask "nikitabobko/tap/aerospace"          # tiling WM, TOML-configured, no SIP disable (config: aerospace/)
 brew "FelixKratz/formulae/sketchybar"     # programmable menu bar (config: sketchybar/)
-brew "FelixKratz/formulae/borders"        # JankyBorders — focused-window ring (aerospace after-startup-command)
+brew "FelixKratz/formulae/borders"        # JankyBorders — focused-window ring (config: borders/; run via brew services)
 cask "karabiner-elements"                 # keyboard remap: Caps→Ctrl/Esc + Tab-hyper layers (config: karabiner/)
 
 # ── Launcher ────────────────────────────────────────────────────────────────────
