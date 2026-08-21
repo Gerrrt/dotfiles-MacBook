@@ -32,24 +32,35 @@ start-at-login = true
 # get hidden, AeroSpace un-hides it on the next focus so it never silently vanishes from a tile.
 automatically-unhide-macos-hidden-apps = true
 
-# ── Startup processes ─────────────────────────────────────────────────────────────────────────
-# Both helpers self-detect an already-running instance, so this is safe across config reloads.
-#   • sketchybar  — the menu bar (config: sketchybar/); started here so the bar is up even if
-#                   launchd ordering races AeroSpace.
-#   • borders     — JankyBorders (FelixKratz), draws a colored ring around the focused window so
-#                   the active tile is unmistakable. Palette matches tokyonight-storm: blue accent
-#                   when focused, comment-grey when not. Installed via the Brewfile. The GlazeWM
-#                   twin is its native window_effects border (same #7aa2f7 / #565f89 palette).
+# ── Startup processes (FALLBACK — launchd is the owner) ───────────────────────────────────────
+# sketchybar and borders are registered as brew services by bootstrap.sh, which is what actually
+# brings them up: `brew services` gives each a launchd agent with keep_alive (so it starts at
+# login and restarts on crash, independent of AeroSpace) and a PATH that includes
+# /opt/homebrew/bin — the sketchybar plugins call bare `sketchybar` and inherit it.
+#   • sketchybar  — the menu bar (config: sketchybar/)
+#   • borders     — JankyBorders (FelixKratz), the ring around the focused window. Its palette
+#                   now lives in borders/bordersrc (a brew service runs the binary with NO
+#                   arguments), not on the command line here.
+# These two lines remain as a fallback for a box where the services were never registered. Both
+# helpers self-detect an already-running instance — sketchybar takes a lock file, borders exits
+# when invoked bare while running — so this is safe across config reloads and double-starts.
+#
+# The PATH prefix is not optional. AeroSpace is a launchd-started GUI app and does NOT inherit
+# /opt/homebrew/bin, so a bare command name here resolves to nothing and exec-and-forget swallows
+# the failure — the bar and the ring simply never appear (#134). karabiner/karabiner.json carries
+# the same prefix on every shell_command for the same reason; keep the two in step.
 after-startup-command = [
-  'exec-and-forget sketchybar',
-  'exec-and-forget borders active_color=0xff7aa2f7 inactive_color=0xff565f89 width=5.0 order=above',
+  'exec-and-forget PATH=/opt/homebrew/bin:/usr/local/bin:$PATH sketchybar',
+  'exec-and-forget PATH=/opt/homebrew/bin:/usr/local/bin:$PATH borders',
 ]
 
 # Notify sketchybar on workspace change so the spaces widget repaints (see sketchybar/plugins).
+# Same PATH prefix, and here it is the ONLY fix available: there is no service to fall back on,
+# so without it the spaces widget never repaints on a workspace switch.
 exec-on-workspace-change = [
   '/bin/bash',
   '-c',
-  'sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=$AEROSPACE_FOCUSED_WORKSPACE',
+  'PATH=/opt/homebrew/bin:/usr/local/bin:$PATH sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=$AEROSPACE_FOCUSED_WORKSPACE',
 ]
 
 # Lazily warp the mouse to the center of the newly-focused monitor (i3's default). Keeps the

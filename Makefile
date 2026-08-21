@@ -11,11 +11,11 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-# Repo-owned bash scripts: every *.sh outside the vendored core/ subtree, plus
-# sketchybar/sketchybarrc — a bash entry point with NO .sh extension (sketchybar
-# requires that exact filename), so the glob would miss it. Append it explicitly
-# so shellcheck/shfmt/syntax cover it like any other repo-owned script.
-SH_FILES := $(shell find . -name '*.sh' -not -path './core/*' -not -path './.git/*' | sort) sketchybar/sketchybarrc
+# Repo-owned bash scripts: every *.sh outside the vendored core/ subtree, plus the two
+# bash entry points with NO .sh extension — sketchybar/sketchybarrc and borders/bordersrc.
+# Each tool requires that exact filename, so the glob would miss them. Append them
+# explicitly so shellcheck/shfmt/syntax cover them like any other repo-owned script.
+SH_FILES := $(shell find . -name '*.sh' -not -path './core/*' -not -path './.git/*' | sort) sketchybar/sketchybarrc borders/bordersrc
 SHFMT_FLAGS := -i 2
 
 # Repo-owned zsh modules. These are the real behavioral surface of this repo, yet
