@@ -217,9 +217,18 @@ else
   mkdir -p "$ahome/.config/tmux/plugins/tpm"
   printf '#!/bin/sh\nexit 0\n' >"$abin/mise"
   printf '#!/bin/sh\nexit 1\n' >"$abin/brew" # every subcommand crashes, as the real one did
-  chmod +x "$abin/mise" "$abin/brew"
+  # A full run installs the repo's local pre-commit hook, and $REPO is the REAL working
+  # tree (it comes from bootstrap.sh's own location and cannot be sandboxed like $HOME).
+  # Stub it via the BOOTSTRAP_PRE_COMMIT seam so the tests cannot rewrite the
+  # contributor's .git/hooks/pre-commit — `make test-repo` is itself a pre-commit hook, so
+  # that would be a hook rewriting itself mid-commit. The stub records that it was called,
+  # which is what lets the install path still be asserted below.
+  # shellcheck disable=SC2016  # $0 must expand when the STUB runs, not when it is written
+  printf '#!/bin/sh\ntouch "$0.called"\nexit 0\n' >"$abin/pre-commit"
+  chmod +x "$abin/mise" "$abin/brew" "$abin/pre-commit"
+  hook_before="$(cat "$REPO/.git/hooks/pre-commit" 2>/dev/null || true)"
   # A FULL run (no --links-only/--no-brew): the provision path is the whole point.
-  OUT="$(HOME="$ahome" PATH="$abin:$PATH" BOOTSTRAP_BREW="$abin/brew" BOOTSTRAP_ALLOW_NON_DARWIN=1 NO_COLOR=1 bash "$REPO/bootstrap.sh" 2>&1)"
+  OUT="$(HOME="$ahome" PATH="$abin:$PATH" BOOTSTRAP_BREW="$abin/brew" BOOTSTRAP_PRE_COMMIT="$abin/pre-commit" BOOTSTRAP_ALLOW_NON_DARWIN=1 NO_COLOR=1 bash "$REPO/bootstrap.sh" 2>&1)"
   brc=$?
   # The headline symptom, asserted on its own: silence is the bug.
   if [[ -n "$OUT" ]]; then ok "crashing brew: the run still PRINTS"; else no "crashing brew: the run still PRINTS" "zero bytes of output"; fi
@@ -229,6 +238,18 @@ else
   assert_contains "crashing brew: the bundle failure is ledgered" "$OUT" "brew bundle failed"
   assert_contains "crashing brew: the summary still prints" "$OUT" "linked ·"
   if [[ -L "$ahome/.zshenv" ]]; then ok "crashing brew: symlinks were still wired"; else no "crashing brew: symlinks were still wired" "the sandbox .zshenv is not a link"; fi
+  # A full run reaches the pre-commit install (#135) — unless this box already has the
+  # framework hook, in which case the run correctly reports it instead of reinstalling.
+  if [[ -f "$abin/pre-commit.called" ]]; then
+    ok "full run: the local pre-commit hook is installed"
+  elif grep -q '# start templated' "$REPO/.git/hooks/pre-commit" 2>/dev/null; then
+    skipt "full run: the local pre-commit hook is installed (already present on this box)"
+  else
+    no "full run: the local pre-commit hook is installed" "the stub was never invoked"
+  fi
+  # And, whichever branch it took, it did NOT touch the real repo's hook.
+  assert_eq "full run leaves the contributor's .git/hooks/pre-commit byte-identical" \
+    "$hook_before" "$(cat "$REPO/.git/hooks/pre-commit" 2>/dev/null || true)"
   rm -rf "$ahome" "$abin"
 fi
 
@@ -315,6 +336,102 @@ assert_not_contains "--links-only does not run mise install" "$OUT" "installing 
 [[ -n "$SANDBOX" ]] && rm -rf "$SANDBOX"
 
 assert_contains "--help documents the exit codes" "$(bash "$REPO/bootstrap.sh" --help 2>&1)" "3  ran, but one or more steps FAILED"
+
+# ── B1d. bootstrap.sh: the closing checklist (#135) ───────────────────────────
+# A clean exit was never the same as a finished machine: GUI permissions, tmux plugins,
+# the pre-commit hook and the git identity were all left undone and unmentioned, so the
+# run closed with "complete" over a box whose hotkeys and tiling did nothing. The list has
+# to be PROBED — a hardcoded one would be wrong the moment a step is actually done — so
+# these drive the probes against a sandbox HOME rather than asserting fixed text.
+#
+# Hermetic, and deliberately so: tpm is pre-seeded WITHOUT bin/install_plugins, so
+# install_tmux_plugins returns before it can reach the network, and a dummy plugin
+# directory stands in for an installed plugin. The two desktop probes read REAL machine
+# state (/Applications, systemextensionsctl, aerospace) which is absent on Linux CI, so
+# nothing here asserts on them.
+section "bootstrap.sh — closing checklist (#135)"
+
+# A dry run probes nothing — every item would read as outstanding, and a plan that lies is
+# worse than no plan — but it must still say where the list went.
+run_bootstrap piped --links-only --dry-run
+assert_not_contains "dry-run prints no checklist" "$OUT" "==> next steps"
+assert_contains "dry-run says the checklist follows a real run" "$OUT" "reported after a real run"
+[[ -n "$SANDBOX" ]] && rm -rf "$SANDBOX"
+
+chome="$(mktemp -d)"
+cbin="$(mktemp -d)"
+mkdir -p "$chome/.config/tmux/plugins/tpm" "$chome/.config/tmux/plugins/tmux-sensible"
+printf '#!/bin/sh\nexit 0\n' >"$cbin/mise"
+# Stubbed for the same reason as B1b3 above, and here it also makes the assertion
+# deterministic: the pre-commit item is reported whether or not the contributor's box has
+# the real binary installed.
+# shellcheck disable=SC2016  # $0 must expand when the STUB runs, not when it is written
+printf '#!/bin/sh\ntouch "$0.called"\nexit 0\n' >"$cbin/pre-commit"
+chmod +x "$cbin/mise" "$cbin/pre-commit"
+# Baseline for the "--links-only installs nothing" check further down. Taken before any
+# apply, because these runs drive bootstrap against the REAL working tree.
+ck_hook_before="$(cat "$REPO/.git/hooks/pre-commit" 2>/dev/null || true)"
+run_checklist() { # → OUT, RC   (same sandbox each time, so state carries between calls)
+  OUT="$(HOME="$chome" PATH="$cbin:$PATH" BOOTSTRAP_PRE_COMMIT="$cbin/pre-commit" \
+    BOOTSTRAP_ALLOW_NON_DARWIN=1 NO_COLOR=1 \
+    bash "$REPO/bootstrap.sh" --no-brew --links-only 2>&1)"
+  RC=$?
+}
+
+run_checklist
+assert_eq "a real apply that prints a checklist still exits 0" 0 "$RC"
+assert_contains "a real apply prints the checklist" "$OUT" "==> next steps"
+# blib_seed has just copied core/git/local.gitconfig.example, so the identity is the
+# placeholder `you@example.com`. NB it is NOT the string "FILL IN your name & email" —
+# that never reaches the file, it is only blib_seed's one-line note at seed time.
+assert_contains "the seeded placeholder git identity is reported" "$OUT" "git identity is still the seeded placeholder"
+# tpm present with a plugin already beside it ⇒ reported done, with no network clone.
+assert_contains "already-installed tmux plugins are reported, not reinstalled" "$OUT" "tmux plugins installed (1)"
+
+# PROBED, not hardcoded: fill the identity in and the item must disappear on the next run.
+git config -f "$chome/.config/git/local.gitconfig" user.name "A Real Person"
+git config -f "$chome/.config/git/local.gitconfig" user.email "real@example.org"
+run_checklist
+assert_not_contains "a filled-in identity drops off the checklist" "$OUT" "git identity is still the seeded placeholder"
+assert_contains "a filled-in identity is confirmed instead" "$OUT" "git identity set (real@example.org)"
+
+# --links-only promises "no installs" in both usage() and the README, and writing a git
+# hook is an install. This matters beyond tidiness: the suite runs REAL --links-only
+# applies against the actual working tree, so a slip here would rewrite the contributor's
+# own .git/hooks/pre-commit out from under them.
+# Asserted as "unchanged", not as "absent": a contributor who has run `pre-commit install`
+# (which SECURITY.md tells them to, and which a full ./bootstrap.sh now does for them) has
+# pre-commit's hook there legitimately, and an absolute assertion would fail on their box
+# for no reason. What must hold is that the run above did not MOVE it either way.
+hookf="$REPO/.git/hooks/pre-commit"
+hook_after="$(cat "$hookf" 2>/dev/null || true)"
+assert_eq "--links-only leaves .git/hooks/pre-commit byte-identical" "$ck_hook_before" "$hook_after"
+# What it reports still depends on the contributor's own hook, so assert the right thing
+# for each state rather than one line that only holds on one of them.
+if grep -q '# start templated' "$hookf" 2>/dev/null; then
+  assert_contains "an already-installed pre-commit hook is confirmed" "$OUT" "pre-commit hook installed"
+else
+  assert_contains "--links-only reports the pre-commit gate as outstanding" "$OUT" "run: pre-commit install"
+fi
+
+# The outstanding half must reach automation as well: `ok` alone would call a box finished
+# while its keyboard remapper is still inert. Same sandbox, so still no network.
+cjson="$(HOME="$chome" PATH="$cbin:$PATH" BOOTSTRAP_PRE_COMMIT="$cbin/pre-commit" \
+  BOOTSTRAP_ALLOW_NON_DARWIN=1 NO_COLOR=1 \
+  bash "$REPO/bootstrap.sh" --no-brew --links-only --json 2>/dev/null)"
+assert_contains "--json carries a next_steps[] channel" "$cjson" '"next_steps":'
+assert_eq "--json with a checklist is still ONE line on stdout" 1 "$(printf '%s\n' "$cjson" | wc -l | tr -d ' ')"
+assert_not_contains "the human checklist stays off the JSON stdout" "$cjson" "==> next steps"
+if command -v python3 >/dev/null 2>&1; then
+  if printf '%s' "$cjson" | python3 -c 'import json,sys; sys.exit(0 if isinstance(json.load(sys.stdin)["next_steps"], list) else 1)' 2>/dev/null; then
+    ok "--json next_steps parses as an array"
+  else
+    no "--json next_steps parses as an array" "$cjson"
+  fi
+else
+  skipt "--json next_steps parses as an array (no python3)"
+fi
+rm -rf "$chome" "$cbin"
 
 # ── B2. bootstrap.sh --uninstall: reverse links + restore backups (B4) ─────────
 section "bootstrap.sh — uninstall (reverse symlinks, restore backups, skip foreign)"

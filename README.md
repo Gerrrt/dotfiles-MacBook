@@ -154,6 +154,36 @@ leaves you installed but *degraded* (no runtimes, no tmux plugins). The closing
 line says so, the failed steps are listed under the summary, and the exit code
 distinguishes it from both a clean run and a bootstrap that never started.
 
+#### The closing checklist
+
+A clean exit still is not a finished machine, so the run ends with a `next steps`
+block — **probed, not hardcoded**, so it names only what is actually outstanding
+and says nothing on a box where everything is done:
+
+```text
+==> next steps
+  • Karabiner-Elements — open it once, approve its driver extension, then grant
+    it Input Monitoring (System Settings → Privacy & Security)
+  • git identity is still the seeded placeholder — edit ~/.config/git/local.gitconfig
+  ✓ AeroSpace is running and responding
+  ✓ tmux plugins installed (6)
+  ✓ pre-commit hook installed
+```
+
+Two of those bootstrap now simply **does**: it installs the tmux plugins headlessly
+(rather than leaving you to press `prefix + I`) and runs `pre-commit install`, so the
+local lint and `gitleaks` gate exists from the first run. The `✓` lines are the proof
+they landed.
+
+The GUI permissions are the ones only you can grant. macOS keeps those grants in a
+system database that is unreadable without Full Disk Access, so bootstrap cannot ask
+"was this allowed?" — each `✓` there reports a *behavioural* check (the driver
+extension is approved, AeroSpace answers its socket) and is worded as exactly that,
+never as more.
+
+`--dry-run` skips the block entirely: nothing ran, so every item would read as
+outstanding.
+
 #### `--json` output
 
 One object on stdout, nothing else (the human log goes to stderr):
@@ -167,7 +197,8 @@ One object on stdout, nothing else (the human log goes to stderr):
   "tools": { "zsh": true, "starship": true, "mise": true, "fzf": true,
              "nvim": true, "tmux": true, "git": true },
   "errors": ["mise install failed — …; re-run: mise install"],
-  "warnings": ["not yet on PATH: starship — open a new shell, …"]
+  "warnings": ["not yet on PATH: starship — open a new shell, …"],
+  "next_steps": ["AeroSpace is not responding — launch it and grant it Accessibility …"]
 }
 ```
 
@@ -175,6 +206,12 @@ One object on stdout, nothing else (the human log goes to stderr):
 alone if you want one field. `warnings` are notices that do **not** degrade the
 run (a tool that just needs a fresh shell), so they never clear `ok`. `tools`
 reports whether each headline binary resolved on `PATH` at the end of the run.
+
+`next_steps` is the outstanding half of the closing checklist — work that is left
+for a *person*, not a defect. It never clears `ok` either, because nothing failed;
+without it a fleet-provisioning script reading `ok` alone would call a box finished
+while its keyboard remapper is still inert. Empty on a machine with nothing left
+to do, and empty under `--dry-run`, which probes nothing.
 
 `--uninstall --json` emits the same object, and is the only mode that fills
 `removed` / `restored`. It reports `"tools": {}` — an uninstall never probes
