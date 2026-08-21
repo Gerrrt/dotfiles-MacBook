@@ -12,6 +12,13 @@
 # output paths — never a real provision. Every mutation is sandboxed under a temp HOME.
 # zsh-dependent checks self-skip when zsh is absent (matching test-core.sh's contract).
 #
+# HOW MANY ASSERTIONS: it depends on the box, which is why README.md and CONTRIBUTING.md
+# quote "~100" rather than a figure. Whole sections self-skip where they cannot run — the
+# crashing-brew case needs the Command Line Tools, the zsh ones need zsh — so the same
+# tree reports 97 pass / 2 skip on Linux CI and 108 pass / 0 skip on the macOS runner.
+# There is no single true number, and the exact one those docs used to carry (48) was
+# stale by more than half before anyone noticed. Do not put a precise count back.
+#
 #   ./test/test-repo.sh            # run everything
 #   ./test/test-repo.sh --quiet    # only print failures + the summary
 # ──────────────────────────────────────────────────────────────────────────────
