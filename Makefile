@@ -27,7 +27,7 @@ ZSH_FILES := zsh/zshenv zsh/zprofile zsh/zshrc os/macos.zsh
 .PHONY: help lint fmt fmt-check shellcheck syntax zsh-syntax check core-advisory \
         tools test test-repo test-all bench bootstrap bootstrap-dry doctor sync-core \
         core-audit verify-core core-lock brew-check secrets config-check markdownlint pins-check \
-        trap-guard skip-guards
+        trap-guard skip-guards exec-bits
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -84,6 +84,9 @@ trap-guard: ## Refuse a RETURN trap that does not disarm itself (shellcheck cann
 
 skip-guards: ## Assert the "skips if not installed" targets actually skip (regression gate for #156)
 	@./test/check-skip-guards.sh
+
+exec-bits: ## Assert a shebang and the exec bit agree, both ways (CI never runs pre-commit)
+	@./test/check-exec-bits.sh
 
 config-check: ## Parse every repo-owned .json/.jsonc/.toml (karabiner, aerospace, fastfetch, renovate)
 	@./test/check-configs.sh
@@ -151,7 +154,7 @@ test: ## Run the vendored Core regression harness (self-skips without zsh)
 # skip-guards is a prerequisite here, NOT in `lint`: it drives `make` itself, and nesting a
 # recursive make inside the lint graph is both surprising and slow. It is a behavioural
 # assertion about the Makefile, so it belongs with the behavioural tests.
-test-repo: skip-guards ## Run THIS repo's behavioral tests (bootstrap.sh, zsh loader, defaults.sh)
+test-repo: skip-guards exec-bits ## Run THIS repo's behavioral tests (bootstrap.sh, zsh loader, defaults.sh)
 	@./test/test-repo.sh
 
 test-all: test-repo test ## Run repo-owned tests + the vendored Core harness
