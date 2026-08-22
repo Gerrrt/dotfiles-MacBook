@@ -8,14 +8,27 @@
 # by `bash -n`/`zsh -n` (syntax, not behaviour). This harness closes that gap.
 #
 # It is HERMETIC and runs anywhere (Linux CI included): bootstrap.sh is macOS-only, so
-# we set BOOTSTRAP_ALLOW_NON_DARWIN=1 and only ever exercise its --dry-run / arg-parse /
-# output paths — never a real provision. Every mutation is sandboxed under a temp HOME.
+# we set BOOTSTRAP_ALLOW_NON_DARWIN=1. Every mutation is sandboxed under a temp HOME, and
 # zsh-dependent checks self-skip when zsh is absent (matching test-core.sh's contract).
 #
+# PROVISION IS EXERCISED HERE, and this file is where that fact lives (#178). Sections
+# B1b3/B1b4 run a FULL bootstrap — no --links-only — so provision() actually executes.
+# They reach it only through the BOOTSTRAP_BREW seam and a PATH shim dir, never the real
+# Homebrew, and they self-skip where the Command Line Tools are absent (so Linux CI runs
+# everything except them). The macOS CI leg sets REPO_TESTS_GATE_PROVISION=1 and section
+# G2 turns "they all skipped" into a FAILURE there — this repo's provision() gate is that
+# leg, and Core's reusable bootstrap-test.yml cannot be it.
+#
+# HONEST LIMIT, so a green run is not over-read: these sections prove provision() RAN,
+# BRANCHED, and returned/exited as designed. Nothing is installed. They say nothing about
+# whether the Brewfile's formulae exist, whether a cask name is right, or whether a real
+# Homebrew install would succeed — only `make brew-check` on a provisioned machine, or a
+# periodic real bootstrap, covers that.
+#
 # HOW MANY ASSERTIONS: it depends on the box, which is why README.md and CONTRIBUTING.md
-# quote "~100" rather than a figure. Whole sections self-skip where they cannot run — the
-# crashing-brew case needs the Command Line Tools, the zsh ones need zsh — so the same
-# tree reports 97 pass / 2 skip on Linux CI and 108 pass / 0 skip on the macOS runner.
+# quote "~150" rather than a figure. Whole sections self-skip where they cannot run — the
+# provision cases need the Command Line Tools, the zsh ones need zsh — so the same tree
+# reports roughly 112 pass / 4 skip on Linux CI and 149 pass / 2 skip on the macOS runner.
 # There is no single true number, and the exact one those docs used to carry (48) was
 # stale by more than half before anyone noticed. Do not put a precise count back.
 #
@@ -41,6 +54,9 @@ else
   c_g='' c_r='' c_d='' c_0=''
 fi
 pass=0 fail=0 skip=0
+# Did any section actually ENTER provision()? Section G2 turns a run where every
+# provision section self-skipped into a FAILURE on the CI leg that claims to gate it (#178).
+prov_ran=0
 ok() {
   pass=$((pass + 1))
   ((QUIET)) || printf '  %s✓%s %s\n' "$c_g" "$c_0" "$1"
@@ -219,6 +235,7 @@ section "bootstrap.sh — a crashing brew degrades the run, it does not silence 
 if ! command -v xcode-select >/dev/null 2>&1 || ! xcode-select -p >/dev/null 2>&1; then
   skipt "crashing brew degrades the run (no Command Line Tools — provisioning cannot run here)"
 else
+  prov_ran=1 # this section really enters provision() — see section G2
   ahome="$(mktemp -d)"
   abin="$(mktemp -d)"
   mkdir -p "$ahome/.config/tmux/plugins/tpm"
@@ -259,6 +276,286 @@ else
     "$hook_before" "$(cat "$REPO/.git/hooks/pre-commit" 2>/dev/null || true)"
   rm -rf "$ahome" "$abin"
 fi
+
+# ── B1b4. bootstrap.sh: provision()'s Homebrew-installer branches (#178) ──────
+# B1b3 above covers a brew BINARY THAT EXISTS AND CRASHES. That means `command -v "$BREW"`
+# SUCCEEDS, so the entire installer block (bootstrap.sh:677-702) — the only code in this
+# repo that downloads and then EXECUTES a script — is skipped, along with the satisfied-
+# Brewfile fast path and the --no-brew gate. One of provision()'s ~11 branches was gated;
+# these cases take the rest. Pointing BOOTSTRAP_BREW at a path that does NOT exist is what
+# flips `command -v` and makes the installer block reachable at all.
+#
+# SAFETY, and it is why this section is shaped the way it is: inside that block the run
+# really invokes curl and really runs whatever came back. TWO INDEPENDENT layers stop that
+# from ever being the real Homebrew installer on a contributor's Mac:
+#   1. a `curl` shim first on PATH — proven per-run by shim_wins(), not assumed;
+#   2. an unroutable proxy in the environment of EVERY run below (prov_run), so even a shim
+#      that somehow lost the PATH race gets a curl that fails in milliseconds having
+#      touched no network. The worst case is then a case landing in the download-failure
+#      branch and failing its OWN assertion loudly — never a real install.
+#
+# WHY A PATH SHIM WORKS HERE WHEN B1b3 NEEDED THE BOOTSTRAP_BREW SEAM. brew_shellenv evals
+# `brew shellenv`, which on macOS re-runs path_helper and REWRITES PATH: it hoists
+# /opt/homebrew/{bin,sbin} to the front but PRESERVES the relative order of everything
+# else, so a prepended shim dir stays ahead of /usr/bin. A `brew` stub still loses, because
+# Homebrew links a real `brew` into the dir that just got hoisted above it — hence the env
+# seam. Homebrew links no curl (keg-only, :provided_by_macos), no mktemp (it ships gmktemp)
+# and no xcode-select, so those stubs survive. That is a property of today's Homebrew, not
+# a law, so PROVE it with the same mechanism bootstrap.sh uses and skip rather than run
+# blind if it ever stops holding.
+section "bootstrap.sh — provision()'s installer branches (#178)"
+
+# shim_wins <bindir> <tool> — <bindir>/<tool> must ALREADY exist. True when it still wins
+# after a real `brew shellenv` eval, exactly as provision() will have run one.
+shim_wins() {
+  local got
+  got="$(PATH="$1:$PATH" bash -c '
+    for b in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+      [ -x "$b" ] || continue
+      out="$("$b" shellenv 2>/dev/null)" || exit 1
+      eval "$out"
+      break
+    done
+    command -v "$1"' _ "$2" 2>/dev/null)"
+  [[ "$got" == "$1/$2" ]]
+}
+
+# The B1b3 sandbox idiom, factored out because seven cases share it. Never touches the real
+# $HOME, the real .git/hooks (BOOTSTRAP_PRE_COMMIT) or the real Homebrew (BOOTSTRAP_BREW).
+PHOME="" PBIN=""
+prov_sandbox() {
+  PHOME="$(mktemp -d)"
+  PBIN="$(mktemp -d)"
+  mkdir -p "$PHOME/.config/tmux/plugins/tpm" # skip tpm's first-run network clone
+  printf '#!/bin/sh\nexit 0\n' >"$PBIN/mise"
+  # shellcheck disable=SC2016  # $0 must expand when the STUB runs, not when it is written
+  printf '#!/bin/sh\ntouch "$0.called"\nexit 0\n' >"$PBIN/pre-commit"
+  chmod +x "$PBIN/mise" "$PBIN/pre-commit"
+}
+prov_run() { # prov_run <BOOTSTRAP_BREW value> [bootstrap args...] → OUT, RC
+  local brewpath="$1"
+  shift
+  OUT="$(HOME="$PHOME" PATH="$PBIN:$PATH" \
+    BOOTSTRAP_BREW="$brewpath" BOOTSTRAP_PRE_COMMIT="$PBIN/pre-commit" \
+    BOOTSTRAP_ALLOW_NON_DARWIN=1 NO_COLOR=1 \
+    https_proxy=http://127.0.0.1:1 HTTPS_PROXY=http://127.0.0.1:1 ALL_PROXY=http://127.0.0.1:1 \
+    bash "$REPO/bootstrap.sh" "$@" 2>&1)"
+  RC=$?
+}
+prov_clean() {
+  [[ -n "$PHOME" ]] && rm -rf "$PHOME"
+  [[ -n "$PBIN" ]] && rm -rf "$PBIN"
+  PHOME="" PBIN=""
+}
+
+prov_hook_before="$(cat "$REPO/.git/hooks/pre-commit" 2>/dev/null || true)"
+
+# ── case 1: the Command Line Tools are missing → STOP (bootstrap.sh:667-673) ──
+# The ONE case that gains coverage on Linux too: there `xcode-select` genuinely does not
+# exist, so the branch is reachable with no shim at all. This guard is therefore INVERTED
+# relative to every other provision case in this file.
+prov_sandbox
+prov_skip=0
+if command -v xcode-select >/dev/null 2>&1; then
+  # shellcheck disable=SC2016  # $0/$1 must expand when the STUB runs, not when it is written
+  printf '#!/bin/sh\n[ "$1" = --install ] && { touch "$0.install-called"; exit 0; }\nexit 1\n' >"$PBIN/xcode-select"
+  chmod +x "$PBIN/xcode-select"
+  shim_wins "$PBIN" xcode-select || prov_skip=1
+fi
+if ((prov_skip)); then
+  skipt "missing CLT stops the run (an xcode-select stub cannot win the PATH race here)"
+else
+  # Deliberately NOT prov_ran: this case runs on every box (on Linux `xcode-select` is
+  # genuinely absent, on macOS the shim supplies the failure), so counting it would make
+  # section G2's enforcement vacuously true. G2 asks whether the leg reached the HOMEBREW
+  # paths, and only the CLT-dependent cases below answer that.
+  prov_run /nonexistent/brew
+  assert_eq "missing CLT: exits 1 (STOP, do not carry on brewless)" 1 "$RC"
+  assert_contains "missing CLT: says the CLT are required" "$OUT" "Xcode Command Line Tools are required"
+  assert_contains "missing CLT: tells you to re-run after the installer" "$OUT" "then re-run: ./bootstrap.sh"
+  # The regression this branch exists for: the old code printed "then re-run" and carried
+  # straight on into the Homebrew install and a tpm clone that popped a SECOND dialog.
+  assert_not_contains "missing CLT: never reaches the Homebrew installer" "$OUT" "Installing Homebrew"
+  if [[ -L "$PHOME/.zshenv" ]]; then
+    no "missing CLT: stops before wire_links" "it wired links anyway"
+  else
+    ok "missing CLT: stops before wire_links"
+  fi
+  if [[ -x "$PBIN/xcode-select" ]]; then
+    if [[ -f "$PBIN/xcode-select.install-called" ]]; then
+      ok "missing CLT: the GUI installer was spawned"
+    else
+      no "missing CLT: the GUI installer was spawned" "--install never ran"
+    fi
+  fi
+fi
+prov_clean
+
+# Cases 2-7 all need provisioning to be reachable, i.e. real Command Line Tools.
+if ! command -v xcode-select >/dev/null 2>&1 || ! xcode-select -p >/dev/null 2>&1; then
+  skipt "provision() installer branches (no Command Line Tools — provisioning cannot run here)"
+else
+  # ── case 2: mktemp fails → exit 1 (bootstrap.sh:686-689) ───────────────────
+  # Reachable only via a PATH shim: BSD `mktemp -t` uses the Darwin confstr temp dir and
+  # ignores TMPDIR, so a bogus TMPDIR does NOT force the failure.
+  prov_sandbox
+  printf '#!/bin/sh\nexit 1\n' >"$PBIN/mktemp"
+  chmod +x "$PBIN/mktemp"
+  if shim_wins "$PBIN" mktemp; then
+    prov_ran=1
+    prov_run /nonexistent/brew
+    assert_eq "mktemp failure: exits 1" 1 "$RC"
+    assert_contains "mktemp failure: names the temp file" "$OUT" "could not create a temp file"
+    assert_not_contains "mktemp failure: does not misreport it as a download error" "$OUT" "could not download"
+  else
+    skipt "mktemp failure exits 1 (an mktemp stub cannot win the PATH race here)"
+  fi
+  prov_clean
+
+  # ── case 3: the installer download fails → exit 1 (bootstrap.sh:690-695) ───
+  # The highest-risk branch in the file. The stub writes NOTHING (unlike Core's shim, which
+  # honours -o): a failed download must not leave a file behind for /bin/bash to run.
+  prov_sandbox
+  # shellcheck disable=SC2016  # $0 must expand when the STUB runs, not when it is written
+  printf '#!/bin/sh\necho "curl $*" >>"$0.log"\nexit 1\n' >"$PBIN/curl"
+  chmod +x "$PBIN/curl"
+  if shim_wins "$PBIN" curl; then
+    prov_ran=1
+    prov_run /nonexistent/brew
+    assert_eq "curl failure: exits 1" 1 "$RC"
+    assert_contains "curl failure: blames the network" "$OUT" "could not download the Homebrew installer"
+    assert_contains "curl failure: offers the manual route" "$OUT" "install it by hand from https://brew.sh"
+    # The bug this branch exists for: the upstream one-liner ran /bin/bash on an EMPTY
+    # string and exited 0. Prove the shim really intercepted — without this, a shim that
+    # never engaged looks identical to one that did.
+    assert_contains "curl failure: the shim really intercepted the download" \
+      "$(cat "$PBIN/curl.log" 2>/dev/null || true)" "raw.githubusercontent.com"
+    assert_not_contains "curl failure: does not misreport it as an install failure" "$OUT" "Homebrew installation failed"
+  else
+    skipt "curl failure exits 1 (a curl stub cannot win the PATH race here)"
+  fi
+  prov_clean
+
+  # ── case 4: the installer itself fails → exit 1 (bootstrap.sh:696-700) ─────
+  prov_sandbox
+  cat >"$PBIN/curl" <<'CURLSTUB'
+#!/bin/sh
+out=
+while [ $# -gt 0 ]; do
+  case $1 in
+  -o) out=$2; shift 2 ;;
+  --output=*) out=${1#--output=}; shift ;;
+  *) shift ;;
+  esac
+done
+[ -n "$out" ] && printf '#!/bin/sh\nexit 1\n' >"$out"
+exit 0
+CURLSTUB
+  chmod +x "$PBIN/curl"
+  if shim_wins "$PBIN" curl; then
+    prov_ran=1
+    prov_run /nonexistent/brew
+    assert_eq "failing installer: exits 1" 1 "$RC"
+    assert_contains "failing installer: blames the install" "$OUT" "Homebrew installation failed"
+    assert_not_contains "failing installer: does not misreport a download error" "$OUT" "could not download"
+    assert_not_contains "failing installer: never reaches brew bundle" "$OUT" "formulae/casks"
+  else
+    skipt "a failing installer exits 1 (a curl stub cannot win the PATH race here)"
+  fi
+  prov_clean
+
+  # ── case 5: installer "succeeds" but brew is STILL absent (bootstrap.sh:714-720) ──
+  # The guard that stops `brew bundle` dying at a bare exit 127 with no explanation.
+  prov_sandbox
+  cat >"$PBIN/curl" <<'CURLSTUB2'
+#!/bin/sh
+out=
+while [ $# -gt 0 ]; do
+  case $1 in
+  -o) out=$2; shift 2 ;;
+  --output=*) out=${1#--output=}; shift ;;
+  *) shift ;;
+  esac
+done
+[ -n "$out" ] && printf '#!/bin/sh\nexit 0\n' >"$out"
+exit 0
+CURLSTUB2
+  chmod +x "$PBIN/curl"
+  if shim_wins "$PBIN" curl; then
+    prov_ran=1
+    prov_run /nonexistent/brew
+    assert_eq "brew still absent after install: exits 1" 1 "$RC"
+    assert_contains "brew still absent: names PATH as the problem" "$OUT" "Homebrew is not on PATH"
+    assert_contains "brew still absent: prints the paste-able shellenv remedy" "$OUT" "brew shellenv"
+    assert_not_contains "brew still absent: no bare command-not-found death" "$OUT" "command not found"
+  else
+    skipt "a still-absent brew exits 1 (a curl stub cannot win the PATH race here)"
+  fi
+  prov_clean
+
+  # ── case 6: the Brewfile is already satisfied → skip (bootstrap.sh:724-725) ──
+  # The common real-world RE-RUN path, and previously uncovered. No shims needed: the brew
+  # stub exists, so `command -v "$BREW"` succeeds and the installer block is never entered.
+  # Asserting on the intercept log, not just the message, is what proves the EXPENSIVE path
+  # was skipped rather than merely that a string printed.
+  prov_sandbox
+  prov_ran=1
+  # shellcheck disable=SC2016  # $0/$* must expand when the STUB runs, not when written
+  printf '#!/bin/sh\necho "$*" >>"$0.log"\nexit 0\n' >"$PBIN/brew"
+  chmod +x "$PBIN/brew"
+  prov_run "$PBIN/brew"
+  # NOT an exact exit-code assertion, deliberately. A full run also reaches `mise install`,
+  # which is gated on `command -v mise` AFTER brew_shellenv has prepended /opt/homebrew/bin
+  # — so on a box with a real mise it runs the REAL one (the PATH stub cannot win there,
+  # the same shadowing B1b3 documents) and ledgers a failure against the blocked network,
+  # closing at 3; on a runner without mise the stub wins and it closes at 0. Both are
+  # correct, and neither is what this case is about. What provision() OWES here is that it
+  # did not ABORT the run (exit 1/2) and contributed no failure of its own.
+  if ((RC == 1 || RC == 2)); then
+    no "satisfied Brewfile: provision() did not abort the run" "exit $RC"
+  else
+    ok "satisfied Brewfile: provision() did not abort the run"
+  fi
+  assert_contains "satisfied Brewfile: the run still reaches its summary" "$OUT" "linked ·"
+  assert_contains "satisfied Brewfile: says it skipped" "$OUT" "brew bundle already satisfied"
+  assert_not_contains "satisfied Brewfile: the expensive path was not announced" "$OUT" "formulae/casks"
+  assert_not_contains "satisfied Brewfile: nothing was ledgered" "$OUT" "brew bundle failed"
+  prov_blog="$(cat "$PBIN/brew.log" 2>/dev/null || true)"
+  assert_contains "satisfied Brewfile: the cheap check really ran" "$prov_blog" "bundle check --file="
+  if printf '%s\n' "$prov_blog" | grep -qx "bundle --file=$REPO/Brewfile"; then
+    no "satisfied Brewfile: the full bundle was skipped" "brew bundle ran anyway"
+  else
+    ok "satisfied Brewfile: the full bundle was skipped"
+  fi
+  if [[ -L "$PHOME/.zshenv" ]]; then
+    ok "satisfied Brewfile: wire_links still ran"
+  else
+    no "satisfied Brewfile: wire_links still ran" "no link in the sandbox"
+  fi
+  prov_clean
+
+  # ── case 7: --no-brew gates the INSTALLER too (bootstrap.sh:677, 753-754) ──
+  # Pins a real past bug: --no-brew promised "skip Homebrew/brew bundle" but gated only the
+  # bundle, so on a fresh Mac the flag still downloaded and ran the Homebrew installer.
+  prov_sandbox
+  prov_ran=1
+  prov_run /nonexistent/brew --no-brew
+  # Same reasoning as case 6: the exit code depends on whether this box has a real mise.
+  if ((RC == 1 || RC == 2)); then
+    no "--no-brew: provision() did not abort the run" "exit $RC"
+  else
+    ok "--no-brew: provision() did not abort the run"
+  fi
+  assert_contains "--no-brew: the run still reaches its summary" "$OUT" "linked ·"
+  assert_contains "--no-brew: says it skipped the bundle" "$OUT" "skipping brew bundle"
+  assert_not_contains "--no-brew: never runs the Homebrew installer" "$OUT" "Installing Homebrew"
+  assert_not_contains "--no-brew: never touches the network" "$OUT" "could not download"
+  prov_clean
+fi
+
+# Whatever the branches did, none of it may touch the contributor's real hook (B1b3's rule).
+assert_eq "B1b4 left the contributor's .git/hooks/pre-commit byte-identical" \
+  "$prov_hook_before" "$(cat "$REPO/.git/hooks/pre-commit" 2>/dev/null || true)"
 
 # ── B1c. bootstrap.sh: a degraded run REPORTS itself (#133) ───────────────────
 # Steps that must not abort the run (mise, defaults.sh, chsh, tpm) were each written
@@ -690,6 +987,39 @@ if grep -q 'VERIFY_CORE_STRICT: 1' "$REPO/.github/workflows/ci.yml"; then
   ok "ci.yml arms VERIFY_CORE_STRICT for the verify-core job"
 else
   no "ci.yml no longer sets VERIFY_CORE_STRICT" "strict mode exists but CI never enables it"
+fi
+
+# ── G2. the macOS leg really is provision()'s gate (#178) ─────────────────────
+# #178 was filed on the belief that provision() is executed by no CI job here. It is — by
+# the `macos smoke` leg's `make test-repo`, through the BOOTSTRAP_BREW seam, since B1b3.
+# The defect was that the fact was INVISIBLE: nothing named it, and nothing would notice if
+# it stopped being true. That is the same shape as #154/#155, where a fleet gate this repo
+# does not call had to be ported by hand and the divergence was discoverable only by
+# noticing this repo's absence from a rollout.
+#
+# Two halves, and the SECOND is the one a comment cannot do.
+section "the macOS CI leg is provision()'s gate (#178)"
+
+if grep -q 'REPO_TESTS_GATE_PROVISION: 1' "$REPO/.github/workflows/ci.yml"; then
+  ok "ci.yml marks the macOS leg as provision()'s gate"
+else
+  no "ci.yml no longer marks a provision() gate" "the provision sections would gate nothing"
+fi
+
+# The half a grep cannot do: the marked leg must actually REACH provision(). A guard that
+# silently starts skipping — a runner image without the Command Line Tools, a reordered
+# guard, a renamed seam — is exactly the invisible gap #178 is about, so on that leg a
+# total skip is a FAILURE rather than a quiet pass. Off that leg this is inert, which is
+# what keeps Linux CI and a contributor laptop honest about what they did not run.
+if [[ "${REPO_TESTS_GATE_PROVISION:-}" == 1 ]]; then
+  if ((prov_ran)); then
+    ok "the CI leg that claims to gate provision() actually executed it"
+  else
+    no "the provision() gate leg never entered provision()" \
+      "REPO_TESTS_GATE_PROVISION=1 but every provision section self-skipped"
+  fi
+else
+  skipt "provision() sections actually ran (only enforced on the CI leg that claims to gate them)"
 fi
 
 # ── summary ───────────────────────────────────────────────────────────────────

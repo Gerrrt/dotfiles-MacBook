@@ -425,7 +425,25 @@ jobs:
           ./bootstrap.sh --links-only --dry-run
           bash macos/defaults.sh --dry-run >/dev/null
 
+      # THE PROVISION GATE — this leg, and only this leg, executes bootstrap.sh's
+      # provision(). test-repo.sh's provision sections self-skip where `xcode-select -p`
+      # fails, which is every Linux runner, so the `shell lint` copy of `make test-repo`
+      # runs everything EXCEPT those. Core's reusable bootstrap-test.yml provision-stub
+      # job is Linux-container-only (three ubuntu-latest jobs, two of them `docker run`)
+      # and cannot reach a provision() that hard-exits without the Command Line Tools —
+      # which is why this repo gates it HERE instead of calling that workflow (#178).
+      #
+      # HONEST LIMIT: a green run proves provision() ran, branched, and returned/exited as
+      # designed. Nothing is installed, so it says nothing about whether the Brewfile's
+      # formulae exist or a cask name is right — only `make brew-check` on a provisioned
+      # machine covers that.
+      #
+      # The env marker is LOAD-BEARING, not decoration: test-repo.sh section G2 reads it
+      # and FAILS if the sections it names all self-skipped, so this gate cannot quietly
+      # stop gating (the same discipline as the VERIFY_CORE_STRICT pin in section G).
       - name: repo behavioral tests (on real macOS)
+        env:
+          REPO_TESTS_GATE_PROVISION: 1
         run: make test-repo
 
   # ── the single required status check ─────────────────────────────────────────
