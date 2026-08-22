@@ -13,6 +13,84 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.14.3] - 2026-08-21
+
+### Fixed
+
+- **`sync-core.sh`'s idempotence check failed open when `cmp` was missing, so a fan-out
+  reported repointing workflow pins it never touched.** (#572) `_sync_pin_workflows` asked
+  "did that rewrite change anything" with `cmp -s`. `cmp` ships in **diffutils**, which is
+  not guaranteed present — a Tumbleweed box in this fleet had none, so neither `cmp` nor
+  `diff` existed. A missing binary exits non-zero, which is indistinguishable from "the
+  files differ", so every candidate file took the changed-branch.
+
+  Observed on a real v4.14.x fan-out: seven of nine repos reported 6–12 workflow rewrites
+  and committed **zero**, and the false counts reached nine repos' commit subjects before
+  being corrected by hand. Contents were never corrupted — an unchanged file was rewritten
+  to identical bytes, so git recorded nothing — but a genuine rewrite failure and a missing
+  `cmp` were indistinguishable in the output.
+
+  The same call sat in `update-nvim-plugins.sh`, failing the other way: it reported drift
+  that did not exist, which under `--check` is exit 2 — the freshness gate going red on a
+  lockfile that never moved. One failing open and one failing closed off the same absent
+  binary is the tell that the comparison, not either caller, was the wrong shape.
+
+  Both now call `core_files_identical` in `scripts/lib/common.sh`, which hashes with
+  `git hash-object`. That removes the dependency rather than detecting it: byte-exact, no
+  repository required, and git is the one tool these scripts already cannot run without.
+  `sha256sum` was the other candidate and is wrong for this fleet — macOS ships `shasum`,
+  not `sha256sum`, and these scripts run on the MacBook too. `$(cat a) == $(cat b)` was
+  rejected for stripping trailing newlines from both sides, which would silently miss a
+  real one-byte difference; a test pins that case. Six assertions cover both directions, a
+  missing operand, the trailing-newline case, and correctness on a PATH carrying git and no
+  diffutils — plus a grep that fails the suite if any script reintroduces `cmp`.
+
+## [v4.14.2] - 2026-08-21
+
+### Fixed
+
+- **The `provision-stub` job shipped in v4.14.1 could not run.** It read its shim from the
+  CALLER's vendored `core/scripts/`, which is a different distribution channel from the
+  workflow that uses it: the workflow reaches a caller the moment the `v4` alias moves, while
+  `core/scripts/` only arrives when that repo merges its `core.lock` fan-out PR. Every repo in
+  that window got the job without the script and hard-failed with
+  `core/scripts/provision-shim.sh missing — vendored Core predates it`.
+
+  Harmless in practice — `provision_stub` defaults false and no repo had opted in — but the
+  first one to try (dotgibson/dotfiles-Debian#12) reded immediately.
+
+  The stubs are now built **inline in the job**, so there is exactly one artifact distributed
+  at exactly one ref. An intermediate attempt using a second Core checkout pinned at
+  `github.job_workflow_sha` was abandoned: it silently ran an _older_ revision of the script
+  than the run reported using, which is a worse failure than the one it replaced. Deletes
+  `scripts/provision-shim.sh` and `.github/actionlint.yaml` (whose only suppression existed
+  for `job_workflow_sha`).
+
+  Verified end-to-end before release this time, on `ubuntu:24.04` and `kalilinux/kali-rolling`
+  both: the full stubbed bootstrap walks apt, the 32-package base stack, fourteen SHA-pinned
+  installs, both vendor apt repos, carapace and unattended-upgrades, then crosses into
+  `wire_links` and finishes at `32 linked · 2 seeded · 0 backed up`.
+
+- **Footnote ³² said the OS layer wires direnv; v4.14.1 moved that into Core, in the same
+  release.** (#449) The `direnv` row's footnote was written days before #578 landed and
+  described the arrangement it replaced — "what makes it work is each OS repo's
+  `os/<distro>.zsh` at band 80". v4.14.1 ships both that sentence and the commit that made it
+  false, which is precisely the defect class #568 and #569 were filed for, reintroduced by the
+  footnote that was added alongside them.
+
+  Rewritten to what the code now does: Core wires direnv at `zsh/00-tools.zsh` band 00, and
+  the footnote records why that band rather than 45 (it registers a hook, not a compdef, and
+  band 00 loads under every `CORE_PROFILE` while 45 is ceilinged out of `minimal`) and why it
+  is sourced last of the four inits (direnv prepends to `precmd_functions`/`chpwd_functions`,
+  so sourcing after mise reproduces the resolution order an `.envrc` pinning tool versions
+  expects). The thesis changes with it: direnv is no longer "the one row Core neither installs
+  nor detects" — Core now **wires** it while still neither installing nor detecting it.
+
+  The Kali paragraph needed the same correction and for the same reason. It argued
+  `dotfiles-Offense` misses the hook because it has no `os/` layer — true at band 80, false at
+  band 00, where the hook reaches it from Core like everywhere else. It is live there now and
+  simply finds no binary, since that repo still installs none.
+
 ## [v4.14.1] - 2026-08-21
 
 ### Added
