@@ -664,6 +664,34 @@ else
   no "ghostty/config is missing or empty" "expected a seeded config at ghostty/config"
 fi
 
+# ── G. verify-core.sh: VERIFY_CORE_STRICT flips skip into failure (#136) ──────
+# verify-core is the strongest Core-drift gate, and it exits 0 when it cannot reach
+# upstream. That is right on a laptop and wrong in CI, where a skip is indistinguishable
+# from a pass — so CI sets VERIFY_CORE_STRICT=1. Both halves of that contract are asserted
+# here, and the DEFAULT half is the one that matters most: it is what stops a later edit
+# from making strict unconditional and failing every offline `make lint`.
+#
+# CORE_UPSTREAM=/nonexistent makes the fetch fail immediately with no network at all, so
+# this is deterministic and costs nothing — no flake, no upstream dependency.
+section "verify-core.sh — strict mode (#136)"
+VC_OUT="$(CORE_UPSTREAM=/nonexistent "$REPO/test/verify-core.sh" 2>&1)"
+VC_RC=$?
+assert_eq "unverifiable upstream SKIPS by default (exit 0)" 0 "$VC_RC"
+assert_contains "the skip says why it could not verify" "$VC_OUT" "cannot verify"
+
+VC_OUT="$(CORE_UPSTREAM=/nonexistent VERIFY_CORE_STRICT=1 "$REPO/test/verify-core.sh" 2>&1)"
+VC_RC=$?
+assert_eq "unverifiable upstream FAILS under VERIFY_CORE_STRICT (exit 1)" 1 "$VC_RC"
+assert_contains "the failure names the strict switch that caused it" "$VC_OUT" "VERIFY_CORE_STRICT"
+
+# The CI job must actually SET it — otherwise the strict path above is dead code in the
+# one place it exists for. Grepping the workflow is crude but catches a silent drop.
+if grep -q 'VERIFY_CORE_STRICT: 1' "$REPO/.github/workflows/ci.yml"; then
+  ok "ci.yml arms VERIFY_CORE_STRICT for the verify-core job"
+else
+  no "ci.yml no longer sets VERIFY_CORE_STRICT" "strict mode exists but CI never enables it"
+fi
+
 # ── summary ───────────────────────────────────────────────────────────────────
 printf '\n%s──────── repo test summary ────────%s\n' "$c_d" "$c_0"
 printf '  %spass %d%s   %sskip %d%s   ' "$c_g" "$pass" "$c_0" "$c_d" "$skip" "$c_0"

@@ -47,6 +47,11 @@ make verify-core # the vendored subtree is byte-for-byte upstream
 `pre-commit install` mirrors these at commit time. Each gate self-skips when its tool is
 missing, so `make lint` still works on a bare box — but CI has them all.
 
+`make verify-core` also skips when it cannot reach upstream, which is right on a laptop and
+wrong in CI (a skip there reads as a pass). CI sets `VERIFY_CORE_STRICT=1` so an
+unverifiable run fails instead; set it locally too if you want to *prove* the subtree is
+clean rather than be told it couldn't be checked.
+
 > **Be patient with these two.** `make test` and `make core-audit` each take roughly
 > **6 minutes** on macOS, and the atuin section goes near-silent for ~4 of them — about 25
 > lines of output, then the rest arrives at once. That looks exactly like a wedge; it isn't.
