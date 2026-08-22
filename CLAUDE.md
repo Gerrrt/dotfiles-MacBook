@@ -26,9 +26,11 @@ is a reminder, not an action. After merging a sync PR:
 make test-repo                # prove the new Core still loads (exercises the loader)
 ```
 
-A **manual** `git subtree pull` is the exception, not the norm; take the released
-tag (never `main`) and regenerate the lock with `make core-lock`, or
-`core-integrity` reports the fresh subtree as tampered.
+A **manual** `git subtree pull` is not supported: it moves `core/` but not `core.lock`,
+and `core-integrity` then reports the fresh subtree as tampered. There is no local fix —
+`core.lock` is written by `sync-core.sh` in `dotfiles-core`, in the same commit as the
+pull. Re-run the fan-out (`make sync` in a Core checkout) instead
+(dotgibson/dotfiles-core#593).
 
 What belongs **here** is only the OS-native layer: the `Brewfile`, OS overlays, desktop tooling, and the bootstrap.
 
@@ -46,8 +48,11 @@ What belongs **here** is only the OS-native layer: the `Brewfile`, OS overlays, 
 - `test/` — `test-repo.sh` (behavioral), `verify-core.sh` + `check-configs.sh` (gates)
 - `core/` — vendored Core (read-only here; edit upstream in dotfiles-core)
 - `core.lock` — vendored-Core provenance: `core_version`, `core_sha`, `core_branch`
-  (may hold a SHA — the fan-out records what was vendored, not a moving branch),
-  and `core_tag`. Written by the fan-out; `make core-lock` reproduces it exactly.
+  (may hold a SHA — the fan-out records what was vendored, not a moving branch) and
+  `core_tag`. Written by the fan-out, and **only** by the fan-out — `make core-lock`
+  explains this rather than reproducing it (dotgibson/dotfiles-core#593).
+  `core_branch` becomes `core_ref` on the next Core sync: the name was wrong precisely
+  because the value is often a commit (dotgibson/dotfiles-core#453).
 
 ## Docs
 
