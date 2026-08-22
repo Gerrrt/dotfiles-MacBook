@@ -25,7 +25,6 @@ zsh/local.zsh
 # an ignore-list of key patterns: `ssh/*` means a key dropped here is untracked unless
 # someone deliberately names it below, which is the safe direction to be wrong in.
 ssh/*
-!ssh/config
 # ssh/os.conf → ~/.ssh/config.d/50-os.conf via Core's blib_link_os_layer. Carries this
 # host's per-service key NAMES (never key material) so they survive Core owning the
 # portable ssh config (dotgibson/dotfiles-core#450).

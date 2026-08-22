@@ -43,7 +43,9 @@ What belongs **here** is only the OS-native layer: the `Brewfile`, OS overlays, 
 - `aerospace/`, `sketchybar/`, `borders/`, `karabiner/`, `ghostty/` — macOS desktop tooling
 - `fastfetch/config.jsonc` — system/host info banner, Tokyo Night Storm (matches `sketchybar/colors.sh`); `ff` alias
 - `completions/` — shell completion files
-- `ssh/config` — ssh client config (only this file is tracked; keys never are)
+- `ssh/os.conf` — this host's ssh overlay, linked to `~/.ssh/config.d/50-os.conf`. The
+  portable client config is Core's (`core/ssh/config`); only this overlay is tracked here,
+  and keys never are (dotgibson/dotfiles-core#450)
 - `bootstrap.sh`, `Makefile` — install + dev entry points
 - `test/` — `test-repo.sh` (behavioral), `verify-core.sh` + `check-configs.sh` (gates)
 - `core/` — vendored Core (read-only here; edit upstream in dotfiles-core)
