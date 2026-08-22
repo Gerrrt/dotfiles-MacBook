@@ -240,12 +240,20 @@ jobs:
   # Byte-for-byte integrity of the vendored subtree against upstream @ the recorded
   # subtree-split commit — the backstop for drift the dir-granular manifest can't see
   # (a hand-edited or orphaned file inside a manifested directory). Needs full history so
-  # the git-subtree-split marker resolves; skips gracefully if upstream is unreachable.
+  # the git-subtree-split marker resolves.
+  #
+  # UNGATED on purpose (it used to run only when core/** changed). Two reasons: the job is
+  # ~10s, and the gate had a blind spot — `changes` classifies test/verify-core.sh itself as
+  # shell-only, so a PR editing the gate did not run the gate. Cheap enough that "always"
+  # beats reasoning about when it matters.
   verify-core:
     name: verify vendored core
-    needs: changes
-    if: needs.changes.outputs.core == 'true' # only meaningful when the subtree changed
     runs-on: ubuntu-latest
+    # Refuse to skip here. On a laptop verify-core exits 0 when it cannot reach upstream —
+    # correct there, hostile otherwise — but in a CI log a skip is indistinguishable from a
+    # pass, so a network blip would quietly disarm the gate. Strict makes that a failure.
+    env:
+      VERIFY_CORE_STRICT: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -254,9 +262,9 @@ jobs:
         run: make verify-core
 
       # The third Core reference. verify-core proves the SUBTREE matches core.lock; this
-      # proves the reusable workflows this repo CALLS point at that same commit. Separate
-      # step because verify-core skips gracefully when upstream is unreachable, and this
-      # check is offline and must never skip.
+      # proves the reusable workflows this repo CALLS point at that same commit. Kept a
+      # separate step because it is a distinct claim about a distinct artifact — and it is
+      # offline, so it holds even if the fetch above is what failed.
       - name: Workflow SHA pins match the vendored Core
         run: make pins-check
 

@@ -268,7 +268,7 @@ This is an **OS-native layer**, so the contribution rule is a boundary rule:
    | `make config-check` | every repo-owned `.json` / `.jsonc` / `.toml` parses |
    | `make markdownlint` | repo-owned markdown, against `.markdownlint.jsonc` |
    | `make secrets` | gitleaks over the repo-owned tree |
-   | `make core-audit` · `make verify-core` | the vendored Core subtree hasn't drifted |
+   | `make core-audit` · `make verify-core` | the vendored Core subtree hasn't drifted (CI sets `VERIFY_CORE_STRICT=1` so "couldn't reach upstream" fails instead of skipping) |
    | `actionlint` | the workflows themselves |
    | macOS smoke (CI) | the entry points on real Darwin — clipboard, Brewfile, bootstrap |
 

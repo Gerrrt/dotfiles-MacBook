@@ -12,13 +12,17 @@
 # a genuine local modification — a `git subtree pull` conflict or a hand-edit — not just
 # "we're behind upstream" (which comparing against HEAD would noisily flag).
 #
-# Best-effort + graceful, like the other gates: when upstream is unreachable (offline, a
-# restricted runner) or no subtree marker exists, it SKIPS (exit 0) rather than failing —
-# it can only verify what it can fetch. Override the upstream with CORE_UPSTREAM (a git URL
-# or a local path); the default is the public dotfiles-core.
+# Best-effort + graceful BY DEFAULT, like the other gates: when upstream is unreachable
+# (offline, a restricted runner) or no subtree marker exists, it SKIPS (exit 0) rather than
+# failing — it can only verify what it can fetch, and failing a laptop's `make lint` on a
+# flaky network would be hostile. That is the wrong default in CI, where a skip reads as a
+# pass: set VERIFY_CORE_STRICT=1 there and every skip becomes exit 1 instead, so the run
+# distinguishes "verified" from "couldn't check". Override the upstream with CORE_UPSTREAM
+# (a git URL or a local path); the default is the public dotfiles-core.
 #
 #   ./test/verify-core.sh                              # verify against the public upstream
 #   CORE_UPSTREAM=/path/to/dotfiles-core ./test/verify-core.sh   # verify against a local clone
+#   VERIFY_CORE_STRICT=1 ./test/verify-core.sh         # CI: refuse to skip, fail if unverifiable
 # ──────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
@@ -36,6 +40,17 @@ else
   c_g='' c_r='' c_y='' c_0=''
 fi
 skip() {
+  # A skip is indistinguishable from a pass in a CI log, so a transient network blip
+  # silently turns the strongest drift gate into a green no-op — the job reports ✅ whether
+  # it verified or merely couldn't. VERIFY_CORE_STRICT (set by the CI job) makes "couldn't
+  # check" an error. Deliberately covers EVERY skip site, not just the fetch: the same
+  # reading Core's own --strict uses ("a gate that didn't actually run"), and in CI the
+  # non-network preconditions are all guaranteed present anyway. Unset locally, so a flaky
+  # network still can't fail `make verify-core` on a laptop.
+  if [[ -n "${VERIFY_CORE_STRICT:-}" ]]; then
+    fail "$* [VERIFY_CORE_STRICT]"
+    exit 1
+  fi
   printf '%s–%s %s\n' "$c_y" "$c_0" "$*"
   exit 0
 }
