@@ -55,6 +55,8 @@ skip() {
   exit 0
 }
 ok() { printf '%s✓%s %s\n' "$c_g" "$c_0" "$*"; }
+# Non-fatal notice. Distinct from skip(): the run CONTINUES and still verifies.
+warn() { printf '%s!%s %s\n' "$c_y" "$c_0" "$*" >&2; }
 fail() { printf '%s✗%s %s\n' "$c_r" "$c_0" "$*" >&2; }
 
 command -v git >/dev/null 2>&1 || skip "verify-core: git not available"
@@ -64,11 +66,23 @@ command -v git >/dev/null 2>&1 || skip "verify-core: git not available"
 # commit body as `git-subtree-split: <sha>` under `git-subtree-dir: core`.
 SPLIT="$(git log --grep='git-subtree-dir: core' -n1 --format='%b' 2>/dev/null |
   sed -n 's/^[[:space:]]*git-subtree-split:[[:space:]]*//p' | head -n1)"
-# B1: core.lock is the O(1) offline provenance stamp (core_sha=<full subtree-split>). When
-# BOTH the marker and core.lock are present, assert they AGREE — a mismatch means core.lock
-# is stale (a manual subtree pull without `make core-lock`), so fail loudly rather than
-# verify against the wrong commit. When only core.lock is present (a shallow clone with no
-# subtree history), trust it — verifying without full history is exactly the point.
+# B1: core.lock is the O(1) offline provenance stamp (core_sha=<full subtree-split>), and
+# it OUTRANKS the marker whenever both exist. That used to be the other way round — a
+# mismatch hard-failed as "stale lock" — until main sat red for three commits proving the
+# assumption backwards: this repo is squash-only (CONTRIBUTING.md), git subtree records
+# provenance in COMMIT TRAILERS, and a squash keeps those only if the squash body happens
+# to carry the original message. v4.14.3 (#175) lost them; v4.14.2 (#171) kept them. So the
+# marker is structurally unreliable here, while core.lock is generated, guarded against
+# hand-edits, and independently checked by core-integrity.
+#
+# Preferring the lock costs no detection power, because the byte-for-byte diff below is the
+# real test — the marker/lock comparison only ever picked WHICH commit to diff against:
+#   - manual subtree pull, no `make core-lock` → core/ new, lock old → diff FAILS (caught)
+#   - a hand-edit of core/                     → core/ edited, lock right → diff FAILS (caught)
+#   - a squash ate the marker (this case)      → core/ and lock agree → diff passes (correct)
+# so a mismatch is worth saying out loud, but not worth refusing to verify over.
+#
+# The marker remains the fallback when there is no core.lock at all.
 LOCK_SHA=""
 if [[ -r core.lock ]]; then
   LOCK_SHA="$(sed -n 's/^core_sha=//p' core.lock | head -n1)"
@@ -81,10 +95,12 @@ if [[ -r core.lock ]]; then
   fi
 fi
 if [[ -n "$SPLIT" && -n "$LOCK_SHA" && "$SPLIT" != "$LOCK_SHA" ]]; then
-  fail "core.lock (${LOCK_SHA:0:12}) != subtree-split (${SPLIT:0:12}) — stale lock; run 'make core-lock' and commit it"
-  exit 1
+  warn "core.lock (${LOCK_SHA:0:12}) != newest subtree-split marker (${SPLIT:0:12}) — verifying against core.lock"
+  warn "  usually a squashed sync whose commit body dropped the git-subtree-split trailer, not a bad lock"
+  warn "  do NOT 'make core-lock' to silence this: it rebuilds core_sha FROM the stale marker"
 fi
-[[ -n "$SPLIT" ]] || SPLIT="$LOCK_SHA"
+# core.lock wins when present; the marker is the fallback for a lock-less checkout.
+[[ -z "$LOCK_SHA" ]] || SPLIT="$LOCK_SHA"
 [[ -n "$SPLIT" ]] || skip "verify-core: no git-subtree-split marker or core.lock (not a subtree checkout?)"
 
 UPSTREAM="${CORE_UPSTREAM:-https://github.com/dotgibson/dotfiles-core}"
