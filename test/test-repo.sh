@@ -28,7 +28,8 @@
 # HOW MANY ASSERTIONS: it depends on the box, which is why README.md and CONTRIBUTING.md
 # quote "~150" rather than a figure. Whole sections self-skip where they cannot run — the
 # provision cases need the Command Line Tools, the zsh ones need zsh — so the same tree
-# reports roughly 112 pass / 4 skip on Linux CI and 149 pass / 2 skip on the macOS runner.
+# reports 109 pass / 4 skip on Linux CI and 151 pass / 0 skip on the macOS runner (a
+# contributor's Mac lands elsewhere again — an already-present pre-commit hook skips one).
 # There is no single true number, and the exact one those docs used to carry (48) was
 # stale by more than half before anyone noticed. Do not put a precise count back.
 #
