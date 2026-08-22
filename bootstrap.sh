@@ -289,7 +289,7 @@ n_restored=0 # --uninstall: backups restored over the removed link
 # WARNING = a notice that does NOT make the run degraded (a tool not on PATH *yet*
 #           because you need a new shell). Never affects the exit code.
 #
-# This implements the intent documented upstream at core/lib/bootstrap-lib.sh:775-800
+# This implements the intent documented upstream at core/lib/bootstrap-lib.sh:939-967
 # (blib_note_fail / blib_failures_report) in bootstrap's own idiom: that API models
 # failures only — there is no warnings channel — and prints in the blib_* palette
 # rather than err()'s glyph, which mid-run reads as two different programs. Same
@@ -923,9 +923,9 @@ install_tmux_plugins() {
     done_step "tmux plugins installed ($n)"
     return 0
   fi
-  # Nothing installed and no headless installer to run: a MISSING tpm is already ledgered
-  # as a failure by the caller, so stay quiet rather than say the same thing twice in two
-  # different voices.
+  # Nothing installed and no headless installer to run: a FAILED tpm clone is already
+  # ledgered by the shared scaffold (blib_note_fail → FAILURES), so stay quiet rather than
+  # say the same thing twice in two different voices.
   [[ -x "$tpm/bin/install_plugins" ]] || return 0
   if ! command -v tmux >/dev/null 2>&1; then
     todo_step "tmux plugins are not installed — once tmux is on PATH, open it and press prefix + I"
@@ -1073,12 +1073,15 @@ wire_links() {
   # shellcheck disable=SC2034  # read by the sourced bootstrap-lib.sh (blib_* honor BLIB_DRY)
   BLIB_DRY="$DRY"
   BLIB_LINKED=0 BLIB_SEEDED=0 BLIB_BACKED=0 BLIB_SKIPPED=0
+  # Reset the failure ledger too, so a second blib_link_* call in one run can't double-count.
+  BLIB_FAILED=()
   # blib_* are not --quiet-aware and conflate section headers with actionable messages
-  # (tpm clone failure, seeded-file notes, ssh wiring) on the same stream — so we do NOT
-  # redirect them away under --quiet: a /dev/null there would hide failures/changes too,
-  # not just headers. We accept the scaffold's couple of header lines leaking into a quiet
-  # run as the lesser evil. (In --json mode fd1 already points at stderr, so this output
-  # never reaches the JSON object on fd3 regardless.)
+  # (seeded-file notes, ssh wiring) on the same stream — so we do NOT redirect them away
+  # under --quiet: a /dev/null there would hide those changes too, not just headers. We
+  # accept the scaffold's couple of header lines leaking into a quiet run as the lesser
+  # evil. Failures are no longer part of that trade-off — blib_note_fail puts them on
+  # stderr — but the seeded/ssh notes still are. (In --json mode fd1 already points at
+  # stderr, so this output never reaches the JSON object on fd3 regardless.)
   blib_link_core "$REPO" "$CFG"
   blib_link_os_layer "$REPO" "$CFG" macos
   # fold the scaffold's tallies into this run's summary so --json / print_summary stay accurate
@@ -1086,6 +1089,13 @@ wire_links() {
   n_backed=$((n_backed + BLIB_BACKED))
   n_seeded=$((n_seeded + BLIB_SEEDED))
   n_skipped=$((n_skipped + BLIB_SKIPPED))
+  # ...and the scaffold's FAILURES, so a lib-internal failure (a tpm clone behind a proxy)
+  # makes this run exit 3 like any other degraded step. An array, not a counter, so it
+  # appends. `"${arr[@]+"${arr[@]}"}"` because bash 3.2 under `set -u` treats an empty array
+  # expansion as unset — the happy path leaves it empty. Appended DIRECTLY rather than via
+  # fail_note: blib_note_fail already printed it to stderr, and print_ledger re-lists it at
+  # the end; routing through fail_note would print the same line a third time.
+  FAILURES+=("${BLIB_FAILED[@]+"${BLIB_FAILED[@]}"}")
 
   # ── macOS-only links the shared scaffold does NOT own ──────────────────────
   # zsh entry layer (ZDOTDIR model): ~/.zshenv sets ZDOTDIR; .zprofile/.zshrc live in
@@ -1382,15 +1392,6 @@ else
 fi
 
 wire_links
-
-# tpm (tmux plugin manager) — blib_link_core clones it during wire_links, but announces a
-# FAILED clone with blib_say (a blue `::` status line on stdout) and discards git's error,
-# so behind a proxy you get no plugins and nothing in the log stands out (#133). Until the
-# upstream logging fix lands, check the outcome here: the directory is either there or it
-# isn't. Skipped in --dry-run (nothing was cloned) and when tmux isn't in the selection.
-if ((DRY == 0)) && blib_want tmux && [[ ! -d "$HOME/.config/tmux/plugins/tpm" ]]; then
-  fail_note "tpm (tmux plugin manager) is missing — tmux will start with no plugins; clone it manually, then press prefix + I"
-fi
 
 # tpm being present is not the same as the plugins being installed — that still needed a
 # manual `prefix + I`, which nothing told you about (#135). Do it headlessly instead; see
