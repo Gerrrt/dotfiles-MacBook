@@ -533,7 +533,7 @@ comments, help text, or the names of secret-*handling* code. Specifically:
   `*--password *`, `*--token *`, `*API_KEY*`, `*SECRET*`, `op read*` from the flat
   file; `HIST_IGNORE_SPACE` lets you keep any one-off out by leading it with a space.
   atuin adds its own `history_filter`.
-- **`ssh/config`** is hardened by default (`StrictHostKeyChecking ask`,
+- **`core/ssh/config`** is hardened by default (`StrictHostKeyChecking ask`,
   `VerifyHostKeyDNS yes`, `HashKnownHosts yes`, modern KEX/cipher/MAC allow-lists,
   `ForwardAgent no`) and contains only **commented templates** for bastions/labs —
   no real hostnames, IPs, or usernames committed.
@@ -901,7 +901,7 @@ What this manual now documents, end to end:
 | Tmux | `core/tmux/*`, `os/macos.conf` | §2 |
 | Modern CLI | `core/zsh/{aliases,fzf,plugins,tools}` | §3 |
 | Command matrix | aliases + functions + git + zle + tmux | §4 |
-| Security/refactor | secrets, `ssh/config`, `50-op.zsh`, history hygiene | §5 |
+| Security/refactor | secrets, `core/ssh/config`, `50-op.zsh`, history hygiene | §5 |
 | Desktop/WM | `aerospace/`, `karabiner/`, `sketchybar/`, `macos/defaults.sh` | §6 |
 | Maintenance/install | `60-update.zsh`, `55-maint.zsh`, `bootstrap.sh`, `Makefile`, `core-*` | §7 |
 | Editor/VCS | `core/{nvim,lazygit,mise,jujutsu,git,vim}` | §8 |

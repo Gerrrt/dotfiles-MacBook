@@ -61,7 +61,7 @@ zsh-syntax: ## `zsh -n` syntax gate on repo-owned zsh modules (skips if zsh abse
 	 echo "zsh syntax ok:"; printf '  %s\n' $(ZSH_FILES)
 
 # Repo-owned secret scan. Core's audit runs gitleaks over core/ ONLY, so this repo's own
-# tree — Brewfile, os/, zsh/, ssh/config, sketchybar/, macos/defaults.sh — was never
+# tree — Brewfile, os/, zsh/, ssh/os.conf, sketchybar/, macos/defaults.sh — was never
 # scanned by anything. GitHub push protection was the only net, and it only fires after
 # you try to push. Version is pinned in the vendored core/scripts/tool-versions.env
 # (GITLEAKS_VERSION/GITLEAKS_SHA256); CI installs that exact build via setup-core-tools.

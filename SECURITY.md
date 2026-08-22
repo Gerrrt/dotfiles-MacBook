@@ -5,7 +5,8 @@ and the *tracked tree* holds no credentials and no machine state: git identity l
 untracked `~/.config/git/local.gitconfig`, machine-local shell tweaks in an untracked
 `~/.config/zsh/99-local.zsh`, and real secrets in 1Password (`core/zsh/50-op.zsh` provides
 `opsecret`/`openv`/`optoken`). Under `ssh/`, `.gitignore` excludes everything (`ssh/*`)
-and re-includes only the client config (`!ssh/config`), so a private key dropped in that
+and re-includes only this host's ssh overlay (`!ssh/os.conf`, which names key PATHS and
+never key material), so a private key dropped in that
 directory is untracked by default.
 
 Treat that as a guard against **accident, not an absolute barrier**: ignore rules apply
@@ -50,7 +51,7 @@ Expect an acknowledgement within a few days.
 
 **In scope** — anything in this repo outside `core/`: `bootstrap.sh`, `Brewfile`, `os/`,
 `zsh/`, `macos/defaults.sh`, `aerospace/`, `sketchybar/`, `karabiner/`, `ghostty/`,
-`fastfetch/`, `ssh/config`, `completions/`, `test/`, and the workflows in `.github/`.
+`fastfetch/`, `ssh/os.conf`, `completions/`, `test/`, and the workflows in `.github/`.
 
 **Out of scope — report upstream.** `core/` is a vendored `git subtree` copy of
 [dotfiles-core](https://github.com/dotgibson/dotfiles-core) and is overwritten on the next
