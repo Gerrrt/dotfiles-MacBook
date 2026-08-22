@@ -171,8 +171,10 @@ if [[ -r "$REPO/core/lib/ux.sh" ]]; then
   source "$REPO/core/lib/ux.sh"
 else
   printf 'bootstrap: core/lib/ux.sh is missing — the core/ subtree is incomplete.\n' >&2
-  printf '  a clone always contains core/; if building fresh, run:\n' >&2
-  printf '    git subtree add --prefix=core <dotfiles-core-url> main --squash\n' >&2
+  printf '  a clone always contains core/; if building fresh, take the RELEASED tag\n' >&2
+  printf '  (never main, or core-integrity reports the fresh subtree as TAMPERED):\n' >&2
+  printf '    git subtree add --prefix=core <dotfiles-core-url> refs/tags/v4 --squash\n' >&2
+  printf '    make core-lock\n' >&2
   exit 1
 fi
 c_b=$UX_BLU c_g=$UX_GRN c_y=$UX_YEL c_r=$UX_RED c_0=$UX_RST
@@ -592,8 +594,10 @@ brew_shellenv() {
 # A normal clone already CONTAINS core/ (it's a tracked subtree), so this only fires
 # when building the repo from scratch — say exactly what to run, don't just abort.
 [[ -d "$REPO/core" ]] || {
-  err "core/ subtree missing — this should be present in a clone; if building fresh, run:"
-  info "git subtree add --prefix=core <dotfiles-core-url> main --squash"
+  err "core/ subtree missing — this should be present in a clone; if building fresh, take"
+  err "the RELEASED tag (never main), or core-integrity reports the subtree as TAMPERED:"
+  info "git subtree add --prefix=core <dotfiles-core-url> refs/tags/v4 --squash"
+  info "make core-lock"
   exit 1
 }
 
