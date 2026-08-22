@@ -77,7 +77,8 @@ SPLIT="$(git log --grep='git-subtree-dir: core' -n1 --format='%b' 2>/dev/null |
 #
 # Preferring the lock costs no detection power, because the byte-for-byte diff below is the
 # real test — the marker/lock comparison only ever picked WHICH commit to diff against:
-#   - manual subtree pull, no `make core-lock` → core/ new, lock old → diff FAILS (caught)
+#   - manual subtree pull (which cannot be repaired locally) → core/ new, lock old
+#                                              → diff FAILS (caught)
 #   - a hand-edit of core/                     → core/ edited, lock right → diff FAILS (caught)
 #   - a squash ate the marker (this case)      → core/ and lock agree → diff passes (correct)
 # so a mismatch is worth saying out loud, but not worth refusing to verify over.
@@ -90,14 +91,14 @@ if [[ -r core.lock ]]; then
   # reason to silently skip: an invalid SHA would make the fetch below fail and the script
   # `skip` (exit 0), quietly disabling verification. Fail loudly instead.
   if [[ ! "$LOCK_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-    fail "core.lock has an invalid core_sha ('${LOCK_SHA:-empty}') — expected a 40-char hex SHA; run 'make core-lock' and commit it"
+    fail "core.lock has an invalid core_sha ('${LOCK_SHA:-empty}') — expected a 40-char hex SHA; re-run the fan-out from dotfiles-core ('make sync') and merge the sync PR"
     exit 1
   fi
 fi
 if [[ -n "$SPLIT" && -n "$LOCK_SHA" && "$SPLIT" != "$LOCK_SHA" ]]; then
   warn "core.lock (${LOCK_SHA:0:12}) != newest subtree-split marker (${SPLIT:0:12}) — verifying against core.lock"
   warn "  usually a squashed sync whose commit body dropped the git-subtree-split trailer, not a bad lock"
-  warn "  do NOT 'make core-lock' to silence this: it rebuilds core_sha FROM the stale marker"
+  warn "  there is no local fix, and none is wanted: core.lock is written only by the fan-out"
 fi
 # core.lock wins when present; the marker is the fallback for a lock-less checkout.
 [[ -z "$LOCK_SHA" ]] || SPLIT="$LOCK_SHA"
