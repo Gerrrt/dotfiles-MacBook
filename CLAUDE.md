@@ -54,4 +54,3 @@ What belongs **here** is only the OS-native layer: the `Brewfile`, OS overlays, 
 - `README.md` — install, layer overview, the gate list
 - `TERMINAL_WORKFLOW_GUIDE.md` — the real reference (~870 lines) for the daily workflow
 - `aliases.md` — the alias/verb table
-- `MIGRATION.md` — **archived**: a one-time `~/.config`-as-repo migration, long done
