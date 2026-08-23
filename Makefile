@@ -68,8 +68,20 @@ zsh-syntax: ## `zsh -n` syntax gate on repo-owned zsh modules (skips if zsh abse
 # Self-skips when gitleaks is absent so `make lint` still works on a bare box.
 secrets: ## Scan the working tree for committed secrets (gitleaks; skips if not installed)
 	@# One recipe line — see the note above zsh-syntax (#156).
+	@# -c core/gitleaks.toml — ONE POLICY FILE, Core's, the rule Core's own reusable
+	@# lint-call.yml secrets leg states: every repo measured the same way, no repo widening
+	@# its own allowlist. The stock rule set is not stricter, it is differently wrong —
+	@# several defaults match on credential-shaped POSITION rather than content
+	@# (curl-auth-user fires on anything after `curl -u`), so a variable reference, which is
+	@# the SECURE shape because the value never enters the file, was reported as a leak.
+	@# Concretely: vendored core/CHANGELOG.md documents that allowlist and quotes the example
+	@# it was written for, so the stock scan flagged Core's explanation of the rule as a
+	@# violation of it and this target went red on a sync carrying no credential.
+	@# Not a blinding — the allowlist is scoped to the matched VALUE, not a path, rule or
+	@# repo. Verified both ways with the pinned 8.30.1: the variable-reference form passes,
+	@# a literal `curl -sk -u admin:<value>` in the same position still fails.
 	@if ! command -v gitleaks >/dev/null 2>&1; then echo "  skip secrets (gitleaks not installed — brew bundle)"; exit 0; fi; \
-	 gitleaks dir . --no-banner --redact
+	 gitleaks dir . -c core/gitleaks.toml --no-banner --redact
 
 # Parse-gate the JSON/JSONC/TOML the macOS desktop layer is made of. Nothing checked these
 # before: a malformed karabiner.json or aerospace.toml passed every gate and only failed on
