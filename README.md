@@ -263,7 +263,7 @@ This is an **OS-native layer**, so the contribution rule is a boundary rule:
    | --- | --- |
    | shellcheck · shfmt · `bash -n` | repo-owned bash |
    | `zsh -n` | the zsh entry files (no `.sh` extension, so the bash globs miss them) |
-   | `make test-repo` | bootstrap, the zsh loader, `defaults.sh` — ~100 assertions |
+   | `make test-repo` | bootstrap (incl. provision), the zsh loader, `defaults.sh` — ~150 assertions |
    | file hygiene (CI) | `.pre-commit-config.yaml`'s upstream hooks over the whole tree — whitespace, EOF newlines, line endings, merge markers, shebang ↔ exec bit, yaml/json/toml |
    | `make config-check` | every repo-owned `.json` / `.jsonc` / `.toml` parses |
    | `make markdownlint` | repo-owned markdown, against `.markdownlint.jsonc` |

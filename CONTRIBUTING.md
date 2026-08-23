@@ -39,7 +39,7 @@ Humans and CI run the same commands, so "passes locally" means "passes in CI".
 
 ```bash
 make lint        # shellcheck · shfmt · bash -n · zsh -n · config parse · markdown · secrets
-make test-repo   # bootstrap, the zsh loader, defaults.sh — ~100 assertions
+make test-repo   # bootstrap (incl. provision), the zsh loader, defaults.sh — ~150 assertions
 make test        # the vendored Core regression harness  (CI only — see below)
 make verify-core # the vendored subtree is byte-for-byte upstream
 ```
