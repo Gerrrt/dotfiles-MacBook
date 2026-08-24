@@ -19,11 +19,11 @@ canonical spec; both implementations follow it.
 The bar renders as **three floating "islands"**: the bar itself is transparent and
 each zone carries its own translucent rounded panel with a colored rim (see Geometry).
 
-| Island (rim) | Modules (in order) |
-| --- | --- |
-| **Left** (blue rim) | `logo` · `workspaces` · *(binding-mode — Windows only)* · `front_app` · `pomodoro` · *(caffeinate — macOS only)* · `weather` |
-| **Center** (magenta rim) | `clock` |
-| **Right** (green rim) | `network` · `volume` · `│` · `disk` · `memory` · `cpu` · `│` · `battery` · `power` |
+| Island (rim)             | Modules (in order)                                                                                                           |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Left** (blue rim)      | `logo` · `workspaces` · *(binding-mode — Windows only)* · `front_app` · `pomodoro` · *(caffeinate — macOS only)* · `weather` |
+| **Center** (magenta rim) | `clock`                                                                                                                      |
+| **Right** (green rim)    | `network` · `volume` · `│` · `disk` · `memory` · `cpu` · `│` · `battery` · `power`                                           |
 
 The right island carries two thin grey `│` separators that chunk it into
 **I/O · load · power/ambient** — one after `volume`, one after `cpu`.
@@ -43,15 +43,15 @@ readout kept clear of the volatile right-island network figures and the centered
 
 ## Geometry (three floating rounded islands)
 
-| Token | Value |
-| --- | --- |
-| Island fill | `#1d202f` @ ~93% alpha — `0xee1d202f` (sketchybar) / `rgba(29,32,47,0.93)` (Zebar) |
-| Bar itself | **transparent** — the islands carry the background, the gaps between them are bare |
-| Outer float gap | 8px |
-| Island corner radius | 9px |
-| Island rim | 2px solid — left **blue** `#7aa2f7` · center **magenta** `#bb9af7` · right **green** `#9ece6a` |
-| Island height | 28px, inset within the 36px bar |
-| Blur | **off** — a transparent bar has nothing to blur; islands are plain translucent fills |
+| Token                | Value                                                                                          |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| Island fill          | `#1d202f` @ ~93% alpha — `0xee1d202f` (sketchybar) / `rgba(29,32,47,0.93)` (Zebar)             |
+| Bar itself           | **transparent** — the islands carry the background, the gaps between them are bare             |
+| Outer float gap      | 8px                                                                                            |
+| Island corner radius | 9px                                                                                            |
+| Island rim           | 2px solid — left **blue** `#7aa2f7` · center **magenta** `#bb9af7` · right **green** `#9ece6a` |
+| Island height        | 28px, inset within the 36px bar                                                                |
+| Blur                 | **off** — a transparent bar has nothing to blur; islands are plain translucent fills           |
 
 Within each island, items stay **chip-less** — plain spaced icon+text on the island's
 translucent fill (no per-item background). The three islands are the only rounded
@@ -81,28 +81,28 @@ can't grow into the centered clock.
 
 ## Colors — semantic load scheme (Tokyo Night Storm)
 
-| Token | Hex | `0xAARRGGBB` | Role |
-| --- | --- | --- | --- |
-| bg | `#24283b` | `0xff24283b` | item background |
-| fg | `#c0caf5` | `0xffc0caf5` | default text |
-| fg-dim | `#a9b1d6` | — | dimmed text (workspaces, power btns) |
-| blue / accent | `#7aa2f7` | `0xff7aa2f7` | active highlight, logo, workspaces, front_app, network, battery-charging, left-island rim |
-| green | `#9ece6a` | `0xff9ece6a` | load: low |
-| yellow | `#e0af68` | `0xffe0af68` | load: mid |
-| red | `#f7768e` | `0xfff7768e` | load: high |
-| cyan | `#7dcfff` | `0xff7dcfff` | volume |
-| purple / magenta | `#bb9af7` | `0xffbb9af7` | clock text + center-island rim |
-| orange | `#ff9e64` | `0xffff9e64` | weather + warm accents |
-| grey / comment | `#565f89` | `0xff565f89` | inactive / dim · `│` island separators |
+| Token            | Hex       | `0xAARRGGBB` | Role                                                                                      |
+| ---------------- | --------- | ------------ | ----------------------------------------------------------------------------------------- |
+| bg               | `#24283b` | `0xff24283b` | item background                                                                           |
+| fg               | `#c0caf5` | `0xffc0caf5` | default text                                                                              |
+| fg-dim           | `#a9b1d6` | —            | dimmed text (workspaces, power btns)                                                      |
+| blue / accent    | `#7aa2f7` | `0xff7aa2f7` | active highlight, logo, workspaces, front_app, network, battery-charging, left-island rim |
+| green            | `#9ece6a` | `0xff9ece6a` | load: low                                                                                 |
+| yellow           | `#e0af68` | `0xffe0af68` | load: mid                                                                                 |
+| red              | `#f7768e` | `0xfff7768e` | load: high                                                                                |
+| cyan             | `#7dcfff` | `0xff7dcfff` | volume                                                                                    |
+| purple / magenta | `#bb9af7` | `0xffbb9af7` | clock text + center-island rim                                                            |
+| orange           | `#ff9e64` | `0xffff9e64` | weather + warm accents                                                                    |
+| grey / comment   | `#565f89` | `0xff565f89` | inactive / dim · `│` island separators                                                    |
 
 Shared thresholds (glyph **and** value colored together):
 
-| Module | low (green) | mid (yellow) | high (red) |
-| --- | --- | --- | --- |
-| cpu | 0–49 | 50–79 | 80+ |
-| memory | <70 | 70–87 | 88+ |
-| disk (used %) | <80 (green) | 80–89 | 90+ |
-| battery (charge %) | >40 | 21–40 | ≤20 |
+| Module             | low (green) | mid (yellow) | high (red) |
+| ------------------ | ----------- | ------------ | ---------- |
+| cpu                | 0–49        | 50–79        | 80+        |
+| memory             | <70         | 70–87        | 88+        |
+| disk (used %)      | <80 (green) | 80–89        | 90+        |
+| battery (charge %) | >40         | 21–40        | ≤20        |
 
 `network` = blue. `volume` = cyan. `clock` = magenta/purple. `weather` = orange.
 `workspaces` focused = blue pill with dark text. Island rims: left **blue** · center **magenta** · right **green**.
@@ -112,23 +112,23 @@ Shared thresholds (glyph **and** value colored together):
 sketchybar embeds the literal glyph; Zebar uses the matching `nf-*` class from the
 Nerd Fonts webfont. Same icon on both.
 
-| Module | Nerd Font name | glyph | Zebar `nf-*` class |
-| --- | --- | --- | --- |
-| logo (macOS) | fa-apple |  | — |
-| logo (Windows) | fa-windows |  | `nf-fa-windows` |
-| pomodoro | md-timer-outline | 󰔛 | `nf-md-timer_outline` |
-| clock | md-clock-outline | 󰅐 | `nf-md-clock_outline` |
-| network | md-speedometer | 󰓅 | `nf-md-speedometer` |
-| volume high/med/low/off | md-volume-high / medium / low / off | 󰕾 󰖀 󰕿 󰖁 | `nf-md-volume_high` / `_medium` / `_low` / `_off` |
-| disk | md-harddisk | 󰋊 | `nf-md-harddisk` |
-| memory | md-memory | 󰍛 | `nf-md-memory` |
-| cpu | md-cpu-64-bit | 󰻠 | `nf-md-cpu_64_bit` |
-| battery full/¾/½/¼/empty | fa-battery-4/3/2/1/0 |      | `nf-fa-battery_4` … `_0` |
-| battery charging bolt | md-power-plug | 󰚥 | `nf-md-power_plug` |
-| weather | weather-\* (day/night × clear/cloudy/rain/snow/thunder) | see weather.sh / getWeatherIcon | `nf-weather-*` |
-| caffeinate awake/asleep | md-coffee / md-power-sleep | 󰅶 󰒲 | — |
-| power | md-power | 󰐥 | `nf-md-power` |
-| power → lock/sleep/restart/shutdown | md-lock / power-sleep / restart / power | 󰌾 󰤄 󰜉 󰐥 | `nf-md-lock` / `nf-md-power_sleep` / `nf-md-restart` / `nf-md-power` |
+| Module                              | Nerd Font name                                          | glyph                           | Zebar `nf-*` class                                                   |
+| ----------------------------------- | ------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------- |
+| logo (macOS)                        | fa-apple                                                |                                | —                                                                    |
+| logo (Windows)                      | fa-windows                                              |                                | `nf-fa-windows`                                                      |
+| pomodoro                            | md-timer-outline                                        | 󰔛                               | `nf-md-timer_outline`                                                |
+| clock                               | md-clock-outline                                        | 󰅐                               | `nf-md-clock_outline`                                                |
+| network                             | md-speedometer                                          | 󰓅                               | `nf-md-speedometer`                                                  |
+| volume high/med/low/off             | md-volume-high / medium / low / off                     | 󰕾 󰖀 󰕿 󰖁                         | `nf-md-volume_high` / `_medium` / `_low` / `_off`                    |
+| disk                                | md-harddisk                                             | 󰋊                               | `nf-md-harddisk`                                                     |
+| memory                              | md-memory                                               | 󰍛                               | `nf-md-memory`                                                       |
+| cpu                                 | md-cpu-64-bit                                           | 󰻠                               | `nf-md-cpu_64_bit`                                                   |
+| battery full/¾/½/¼/empty            | fa-battery-4/3/2/1/0                                    |                            | `nf-fa-battery_4` … `_0`                                             |
+| battery charging bolt               | md-power-plug                                           | 󰚥                               | `nf-md-power_plug`                                                   |
+| weather                             | weather-\* (day/night × clear/cloudy/rain/snow/thunder) | see weather.sh / getWeatherIcon | `nf-weather-*`                                                       |
+| caffeinate awake/asleep             | md-coffee / md-power-sleep                              | 󰅶 󰒲                             | —                                                                    |
+| power                               | md-power                                                | 󰐥                               | `nf-md-power`                                                        |
+| power → lock/sleep/restart/shutdown | md-lock / power-sleep / restart / power                 | 󰌾 󰤄 󰜉 󰐥                         | `nf-md-lock` / `nf-md-power_sleep` / `nf-md-restart` / `nf-md-power` |
 
 ## Behaviour parity
 
