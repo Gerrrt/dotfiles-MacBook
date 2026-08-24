@@ -1,0 +1,14 @@
+# .github/core-gates.txt — how this repo satisfies dotfiles-core's reusable gates.
+#
+# ONE LINE PER GATE THIS REPO DOES NOT CALL. Anything that calls the reusable workflow is
+# derived from its own `uses:` line and needs no entry here (dotgibson/dotfiles-core#607).
+#
+#   <gate> own  <how it is satisfied here>
+#   <gate> none <why this repo does not need it>
+#
+# The value is entirely in these lines: without them a rollout audit cannot tell
+# "not covered" from "covered elsewhere", which has already produced two issues filed in
+# good faith against gates this repo does satisfy (#154, #178).
+
+bootstrap-test own ci.yml "macos smoke" runs provision() on a macOS runner via `make test-repo` and the BOOTSTRAP_BREW seam, marked REPO_TESTS_GATE_PROVISION=1 so test-repo.sh section G2 fails if those sections all self-skipped. bootstrap-test.yml is Linux-container-only and this repo's provision() hard-exits without the Command Line Tools, so it can never be a caller.
+lint-call own ci.yml "shell lint" runs `make lint` — shellcheck, shfmt, bash/zsh syntax, RETURN-trap discipline, config-check, markdownlint, gitleaks under core/gitleaks.toml, and pins-check. A superset of lint-call.yml's legs; its '*.sh' pathspec also cannot see the extensionless sketchybar/sketchybarrc.
