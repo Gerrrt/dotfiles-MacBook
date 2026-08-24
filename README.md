@@ -74,11 +74,11 @@ Fedora template. The full docs live on the [documentation site][docs].
 
 The system is three layers, each building on the one below:
 
-| Layer | Lives in | Owns |
-| --- | --- | --- |
-| **Core** | [`dotfiles-core`](https://github.com/dotgibson/dotfiles-core) → vendored into every OS repo's `core/` | zsh, tmux, nvim, git, starship — identical everywhere |
-| **OS-native** | `dotfiles-{MacBook,Windows,Fedora,Arch,Debian,openSUSE,Alpine,Gentoo}` (this repo among them) | package manager, clipboard, paths |
-| **Role** | `dotfiles-Offense`, `dotfiles-Defense` | offensive / defensive tooling |
+| Layer         | Lives in                                                                                              | Owns                                                  |
+| ------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| **Core**      | [`dotfiles-core`](https://github.com/dotgibson/dotfiles-core) → vendored into every OS repo's `core/` | zsh, tmux, nvim, git, starship — identical everywhere |
+| **OS-native** | `dotfiles-{MacBook,Windows,Fedora,Arch,Debian,openSUSE,Alpine,Gentoo}` (this repo among them)         | package manager, clipboard, paths                     |
+| **Role**      | `dotfiles-Offense`, `dotfiles-Defense`                                                                | offensive / defensive tooling                         |
 
 ### Languages
 
@@ -120,19 +120,19 @@ exec zsh
 `core/` is a vendored subtree and is **already present** in a clone — there is no
 submodule step.
 
-| Flag | What it does |
-| --- | --- |
-| `--dry-run`, `-n` | print every planned action; change nothing |
-| `--links-only` | just (re)create symlinks, no installs |
-| `--no-brew` | symlinks + mise, skip Homebrew **and** `brew bundle` |
-| `--set-shell` | make the Homebrew zsh your login shell (`chsh`) |
-| `--macos-defaults` | also run `macos/defaults.sh` (system prefs) |
-| `--only zsh,nvim` | link ONLY these module groups |
-| `--skip desktop` | link everything EXCEPT these module groups |
-| `--uninstall` | remove the symlinks and restore backed-up files |
-| `--quiet`, `-q` | show only CHANGES + the summary |
-| `--json` | machine-readable summary on stdout (for automation) |
-| `-h`, `--help` | the same list, from the installer itself |
+| Flag               | What it does                                         |
+| ------------------ | ---------------------------------------------------- |
+| `--dry-run`, `-n`  | print every planned action; change nothing           |
+| `--links-only`     | just (re)create symlinks, no installs                |
+| `--no-brew`        | symlinks + mise, skip Homebrew **and** `brew bundle` |
+| `--set-shell`      | make the Homebrew zsh your login shell (`chsh`)      |
+| `--macos-defaults` | also run `macos/defaults.sh` (system prefs)          |
+| `--only zsh,nvim`  | link ONLY these module groups                        |
+| `--skip desktop`   | link everything EXCEPT these module groups           |
+| `--uninstall`      | remove the symlinks and restore backed-up files      |
+| `--quiet`, `-q`    | show only CHANGES + the summary                      |
+| `--json`           | machine-readable summary on stdout (for automation)  |
+| `-h`, `--help`     | the same list, from the installer itself             |
 
 Module groups are `zsh nvim tmux git prompt tools desktop` — the first six come
 from Core, `desktop` is this layer's own (ghostty, fastfetch, aerospace,
@@ -140,13 +140,13 @@ sketchybar, karabiner).
 
 #### Exit codes
 
-| Code | Meaning |
-| --- | --- |
-| `0` | clean run |
-| `1` | could not run (not macOS, missing `core/`, no Command Line Tools) |
-| `2` | usage error (unknown flag, bad `--only`/`--skip` selector) |
-| `3` | ran, but one or more steps **failed** — the box is degraded |
-| `130` | interrupted (Ctrl-C); bootstrap is idempotent, just re-run |
+| Code  | Meaning                                                           |
+| ----- | ----------------------------------------------------------------- |
+| `0`   | clean run                                                         |
+| `1`   | could not run (not macOS, missing `core/`, no Command Line Tools) |
+| `2`   | usage error (unknown flag, bad `--only`/`--skip` selector)        |
+| `3`   | ran, but one or more steps **failed** — the box is degraded       |
+| `130` | interrupted (Ctrl-C); bootstrap is idempotent, just re-run        |
 
 Exit `3` is the one to watch in automation. Some steps must not abort the run —
 `mise install`, `macos/defaults.sh`, `chsh`, the tpm clone — so a failure there
@@ -259,18 +259,18 @@ This is an **OS-native layer**, so the contribution rule is a boundary rule:
    `pre-commit install` mirrors them at commit time, so "passes locally" means
    "passes in CI". The full suite:
 
-   | Gate | Covers |
-   | --- | --- |
-   | shellcheck · shfmt · `bash -n` | repo-owned bash |
-   | `zsh -n` | the zsh entry files (no `.sh` extension, so the bash globs miss them) |
-   | `make test-repo` | bootstrap (incl. provision), the zsh loader, `defaults.sh` — ~150 assertions |
-   | file hygiene (CI) | `.pre-commit-config.yaml`'s upstream hooks over the whole tree — whitespace, EOF newlines, line endings, merge markers, shebang ↔ exec bit, yaml/json/toml |
-   | `make config-check` | every repo-owned `.json` / `.jsonc` / `.toml` parses |
-   | `make markdownlint` | repo-owned markdown, against `.markdownlint.jsonc` |
-   | `make secrets` | gitleaks over the repo-owned tree |
-   | `make core-audit` · `make verify-core` | the vendored Core subtree hasn't drifted (CI sets `VERIFY_CORE_STRICT=1` so "couldn't reach upstream" fails instead of skipping) |
-   | `actionlint` | the workflows themselves |
-   | macOS smoke (CI) | the entry points on real Darwin — clipboard, Brewfile, bootstrap |
+| Gate                                   | Covers                                                                                                                                                     |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| shellcheck · shfmt · `bash -n`         | repo-owned bash                                                                                                                                            |
+| `zsh -n`                               | the zsh entry files (no `.sh` extension, so the bash globs miss them)                                                                                      |
+| `make test-repo`                       | bootstrap (incl. provision), the zsh loader, `defaults.sh` — ~150 assertions                                                                               |
+| file hygiene (CI)                      | `.pre-commit-config.yaml`'s upstream hooks over the whole tree — whitespace, EOF newlines, line endings, merge markers, shebang ↔ exec bit, yaml/json/toml |
+| `make config-check`                    | every repo-owned `.json` / `.jsonc` / `.toml` parses                                                                                                       |
+| `make markdownlint`                    | repo-owned markdown, against `.markdownlint.jsonc`                                                                                                         |
+| `make secrets`                         | gitleaks over the repo-owned tree                                                                                                                          |
+| `make core-audit` · `make verify-core` | the vendored Core subtree hasn't drifted (CI sets `VERIFY_CORE_STRICT=1` so "couldn't reach upstream" fails instead of skipping)                           |
+| `actionlint`                           | the workflows themselves                                                                                                                                   |
+| macOS smoke (CI)                       | the entry points on real Darwin — clipboard, Brewfile, bootstrap                                                                                           |
 
    CI requires a single aggregated `ci ok` context rather than each job by name,
    so adding or renaming a leg needs no ruleset change.

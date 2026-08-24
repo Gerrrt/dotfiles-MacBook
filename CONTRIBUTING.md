@@ -8,11 +8,11 @@ all?* Get that right and the rest is mechanical.
 
 Three layers, one test each:
 
-| If it would… | it belongs in |
-|---|---|
-| be identical on every machine, Linux included | **`dotfiles-core`** (upstream) |
-| differ because the OS differs — Homebrew, `/opt/homebrew`, `pbcopy`/`pbpaste`, `defaults write`, aerospace/sketchybar/karabiner/ghostty | **here** |
-| change with the operator rather than the machine | a **role** repo |
+| If it would…                                                                                                                            | it belongs in                  |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| be identical on every machine, Linux included                                                                                           | **`dotfiles-core`** (upstream) |
+| differ because the OS differs — Homebrew, `/opt/homebrew`, `pbcopy`/`pbpaste`, `defaults write`, aerospace/sketchybar/karabiner/ghostty | **here**                       |
+| change with the operator rather than the machine                                                                                        | a **role** repo                |
 
 The trap is the first row. Portable logic that happens to be *convenient* here still
 belongs in Core — otherwise every OS repo re-implements it and the copies drift.
