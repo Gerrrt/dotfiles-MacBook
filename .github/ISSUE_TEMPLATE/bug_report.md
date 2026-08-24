@@ -42,5 +42,5 @@ $ ./bootstrap.sh --links-only --dry-run
      macOS and go near-silent partway through — that is normal, not a hang. -->
 
 ```console
-$ make lint
+make lint
 ```
