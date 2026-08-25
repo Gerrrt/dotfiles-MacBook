@@ -1023,6 +1023,72 @@ else
   skipt "provision() sections actually ran (only enforced on the CI leg that claims to gate them)"
 fi
 
+# ── B2b: --uninstall's dests array must cover every link bootstrap creates ─────
+# uninstall() keeps a HAND-MAINTAINED mirror of the link destinations (bootstrap.sh,
+# `local -a dests=(`). It is the only such list in the fleet — every other repo's
+# uninstall derives from blib_link_core — and it has silently drifted twice: a Core
+# config lands in blib_link_core, every repo picks the LINK up automatically from the
+# vendored lib, and only this repo's REMOVAL side is left behind. The failure is
+# silent: --uninstall reports success and leaves a dangling symlink.
+#
+# So derive the truth from the vendored library and require the array to match. This
+# checks the two helpers THIS repo calls (blib_link_core, blib_link_os_layer); the
+# role-layer helper is not called here.
+#
+# A destination is only REQUIRED when its source actually exists in this repo — a
+# guarded link whose source is absent is never created, so demanding its removal
+# would be a false positive (os/macos.capabilities is exactly that case today).
+section "bootstrap.sh — uninstall covers every link (#197)"
+
+_dests_block="$(sed -n '/local -a dests=(/,/^  )/p' "$REPO/bootstrap.sh")"
+if [[ -z "$_dests_block" ]]; then
+  no "could not read the dests array" "uninstall() no longer has 'local -a dests=('"
+else
+  _lib="$REPO/core/lib/bootstrap-lib.sh"
+  # Line range of the two helpers this repo calls.
+  _b0=$(grep -n '^blib_link_core()' "$_lib" | cut -d: -f1)
+  _b1=$(grep -n '^blib_link_role_layer()' "$_lib" | cut -d: -f1)
+  _missing="" _checked=0 _dynamic=0 _absent=0
+  while IFS=$'\t' read -r _src _dst; do
+    [[ -z "$_dst" ]] && continue
+    # Dynamic destinations (a $(basename) or a loop variable) cannot be compared as
+    # literals. Count them so partial coverage is stated, never silently assumed.
+    # The single quotes are load-bearing: these patterns match a LITERAL '$' in the
+    # library's source text, not an expansion. SC2016 reads that as a mistake here.
+    # shellcheck disable=SC2016
+    if [[ "$_dst" == *'$('* || "$_dst" =~ \$[a-z_]+ && "$_dst" != *'$config'* && "$_dst" != *'$HOME'* ]]; then
+      _dynamic=$((_dynamic + 1))
+      continue
+    fi
+    # Resolve the source against this repo; skip links that never fire.
+    _rsrc="${_src//\$dotfiles/$REPO}"
+    _rsrc="${_rsrc//\$os/macos}"
+    if [[ "$_rsrc" == *'$'* ]]; then
+      _dynamic=$((_dynamic + 1))
+      continue
+    fi
+    if [[ ! -e "$_rsrc" ]]; then
+      _absent=$((_absent + 1))
+      continue
+    fi
+    _checked=$((_checked + 1))
+    # uninstall() spells $config as $CFG; both are "$HOME/.config".
+    _want="${_dst//\$config/\$CFG}"
+    [[ "$_dests_block" == *"$_want"* ]] || _missing="$_missing $_want"
+  done < <(sed -n "${_b0},${_b1}p" "$_lib" |
+    grep -oE 'blib_link "[^"]+" "[^"]+"' |
+    sed -E 's/^blib_link "([^"]+)" "([^"]+)"$/\1\t\2/')
+
+  if [[ -n "$_missing" ]]; then
+    no "dests covers every link blib_link_core/os_layer creates" \
+      "missing from the array:$_missing"
+  elif ((_checked == 0)); then
+    no "dests coverage check parsed no links" "the grep over $_lib matched nothing"
+  else
+    ok "dests covers all $_checked live link destination(s) ($_dynamic dynamic, $_absent source-absent, not checked)"
+  fi
+fi
+
 # ── summary ───────────────────────────────────────────────────────────────────
 printf '\n%s──────── repo test summary ────────%s\n' "$c_d" "$c_0"
 printf '  %spass %d%s   %sskip %d%s   ' "$c_g" "$pass" "$c_0" "$c_d" "$skip" "$c_0"
