@@ -1347,6 +1347,7 @@ uninstall() {
     "$CFG/nvim" "$HOME/.vimrc"
     "$HOME/.gitconfig" "$CFG/git/os.gitconfig" "$CFG/git/ignore"
     "$CFG/mise/config.toml" "$CFG/jj/config.toml" "$CFG/atuin/config.toml"
+    "$CFG/tealdeer/config.toml"
     "$CFG/ghostty/config" "$CFG/fastfetch/config.jsonc" "$HOME/.ssh/config"
     "$CFG/aerospace/aerospace.toml" "$CFG/sketchybar" "$CFG/borders"
     "$CFG/karabiner/karabiner.json"
