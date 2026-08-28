@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   dispatch:
-    uses: dotgibson/dotfiles-core/.github/workflows/notify-web-call.yml@5cb06ab4341de6ce07037e7f91c1e3e9da937de2 # v5.3.0
+    uses: dotgibson/dotfiles-core/.github/workflows/notify-web-call.yml@e4970a12a09361d3a613c04fbc89e2e633659a98 # v5.4.1
     secrets:
       # Least privilege: pass ONLY the secrets the reusable needs, not `inherit`. The
       # reusable mints a short-lived dotfiles-web-scoped GitHub App token when the fleet App
