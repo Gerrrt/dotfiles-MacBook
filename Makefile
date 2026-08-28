@@ -233,4 +233,3 @@ capabilities: ## Validate os/*.capabilities against Core's schema
 	done; \
 	if [ "$$found" -eq 0 ]; then echo "!! no os/*.capabilities — this repo must declare one (see core/examples/os.capabilities.example)"; rc=1; fi; \
 	exit $$rc
-

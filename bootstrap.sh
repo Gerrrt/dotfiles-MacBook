@@ -1342,6 +1342,12 @@ uninstall() {
   local -a dests=(
     "$HOME/.local/bin/clip" "$HOME/.local/bin/clip-paste"
     "$CFG/zsh/80-os.zsh" "$HOME/.zshenv" "$CFG/zsh/.zprofile" "$CFG/zsh/.zshrc"
+    # The OS capability declaration (os/macos.capabilities). NOT a numbered fragment and
+    # not a .zsh, so the `core/zsh/*.zsh` loop below cannot pick it up — it has to be
+    # named here or an uninstall strands it as a dangling symlink. test/test-repo.sh's
+    # "dests covers every link blib_link_core/os_layer creates" assertion is what caught
+    # the omission, which is exactly the drift that check exists for.
+    "$CFG/zsh/os.capabilities"
     "$CFG/starship.toml" "$CFG/lazygit/config.yml"
     "$CFG/tmux/tmux.conf" "$CFG/tmux/tmux.reset.conf" "$CFG/tmux/scripts" "$CFG/tmux/os.conf"
     "$CFG/nvim" "$HOME/.vimrc"
