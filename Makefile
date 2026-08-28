@@ -24,7 +24,7 @@ SHFMT_FLAGS := -i 2
 # dotfiles-core's own CI.
 ZSH_FILES := zsh/zshenv zsh/zprofile zsh/zshrc os/macos.zsh
 
-.PHONY: help lint fmt fmt-check shellcheck syntax zsh-syntax check core-advisory \
+.PHONY: help lint fmt fmt-check shellcheck syntax zsh-syntax check core-advisory capabilities\
         tools test test-repo test-all bench bootstrap bootstrap-dry doctor sync-core \
         core-audit verify-core core-lock brew-check secrets config-check markdownlint pins-check \
         trap-guard skip-guards
@@ -33,7 +33,7 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-15s\033[0m %s\n",$$1,$$2}'
 
-lint: shellcheck fmt-check syntax zsh-syntax trap-guard config-check markdownlint secrets pins-check ## Run all gating checks (shell + format + syntax + trap discipline + configs + markdown + secrets + core pins)
+lint: shellcheck fmt-check syntax zsh-syntax trap-guard config-check markdownlint secrets pins-check capabilities ## Run all gating checks (shell + format + syntax + trap discipline + configs + markdown + secrets + core pins)
 
 shellcheck: ## Static analysis of repo-owned bash
 	@shellcheck $(SH_FILES)
@@ -214,3 +214,23 @@ tools: ## Verify the lint toolchain is installed
 	  command -v $$t >/dev/null && echo "  ok  $$t" \
 	    || { echo "  MISSING $$t — run: brew bundle (or see Brewfile 'Dev: lint & format')"; exit 1; }; \
 	done
+
+# ── the OS capability declaration (Core v5, #663/#667) ────────────────────────
+# ONE definition of the schema gates all seven declaring repos: the validator is
+# core/scripts/check-capabilities.sh, vendored with Core, so a schema change arrives
+# with the next sync instead of needing seven hand-written greps to be updated in
+# step. Core's own `make audit` runs the same script over its shipped example and
+# sweeps the fleet for these files; this is the local half of that gate.
+#
+# The glob is guarded because an unmatched glob stays LITERAL in sh — without the
+# test this would "validate" a file named `os/*.capabilities` and pass on nothing,
+# which is the failure mode a gate must never have.
+capabilities: ## Validate os/*.capabilities against Core's schema
+	@rc=0; found=0; \
+	for f in os/*.capabilities; do \
+	  [ -e "$$f" ] || continue; found=1; \
+	  core/scripts/check-capabilities.sh "$$f" || rc=1; \
+	done; \
+	if [ "$$found" -eq 0 ]; then echo "!! no os/*.capabilities — this repo must declare one (see core/examples/os.capabilities.example)"; rc=1; fi; \
+	exit $$rc
+

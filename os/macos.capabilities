@@ -1,0 +1,68 @@
+# os/macos.capabilities — the macOS capability declaration (Core v5, #663/#667).
+# ──────────────────────────────────────────────────────────────────────────────
+# Read (never sourced) by Core's zsh/02-capabilities.zsh into $_CORE_CAP, and by
+# maint/dotfiles-maint.sh, which is bash. bootstrap.sh links it to
+# $ZDOTDIR/os.capabilities via blib_link_os_layer.
+#
+# Transcribed from core/PORTING-MATRIX.md §"Package-manager commands", macOS column.
+# Validate with:  core/scripts/check-capabilities.sh os/macos.capabilities
+#
+# NOTHING HERE IS PRIVILEGED, and that is the one rule this file exists to state.
+# Every other repo in the fleet prefixes its verbs with `sudo`; Homebrew refuses to
+# run as root and a `sudo brew` is how you break a prefix's permissions for good.
+# Core's _pkgup_run passes an unprefixed value straight through, so the absence of
+# the prefix IS the declaration.
+#
+# A `#` INSIDE A VALUE IS NOT A COMMENT — the reader keeps it. Notes go on their own
+# line, above.
+
+# ── package-manager verbs (all required) ──────────────────────────────────────
+PKG_REFRESH=brew update
+PKG_UPGRADE=brew upgrade
+PKG_INSTALL=brew install
+PKG_REMOVE=brew uninstall
+PKG_SEARCH=brew search
+# `brew which-formula` needs the homebrew/command-not-found tap; without it this
+# verb reports the tap is missing rather than answering, which is the honest failure.
+PKG_OWNS=brew which-formula
+PKG_COUNT_PENDING=brew outdated --quiet
+# --quiet prints one bare formula name per line, so the default match (`.`) and
+# field (1) are exactly right and no PKG_PENDING_* key is needed.
+
+# ── scheduler (required) ──────────────────────────────────────────────────────
+SCHEDULER=launchd
+# An OS-ABSOLUTE PATH IS CORRECT HERE and wrong in Core — this key is what got the
+# last one out of zsh/55-maint.zsh, where `~/Library/LaunchAgents` appeared at six
+# sites and was true on exactly one of the fleet's nine boxes. A DIRECTORY: Core
+# appends its own unit name (com.dotfiles.maint.plist).
+SCHEDULER_UNIT_DIR=~/Library/LaunchAgents
+
+# ── how `up` applies ──────────────────────────────────────────────────────────
+# Homebrew computes against a stale index without this, so the refresh is a real
+# precondition rather than a courtesy: a failure here ABORTS the upgrade.
+PKG_UPGRADE_PRE=brew update
+PKG_UPGRADE_PARTIAL=brew upgrade
+PKG_CLEANUP=brew cleanup
+# NO PKG_ASSUME_YES: `brew upgrade` does not prompt, so there is no flag to append
+# and inventing one would be a lie. `up -y` behaves like `up`, correctly.
+
+# ── how `up` counts ───────────────────────────────────────────────────────────
+# THE ONE ARCHIVE THAT NEEDS THIS. `brew outdated` reads a cached index, so without a
+# preceding `brew update` the nudge reports a number that can never change. Declared
+# on the COUNT path only — the list path deliberately does not pay for the network.
+PKG_COUNT_REFRESH=brew update
+
+# ── the scheduled runner ──────────────────────────────────────────────────────
+# MAINT_UNATTENDED_UPGRADE IS DELIBERATELY ABSENT, and this is NOT the rolling-distro
+# reason Arch and Gentoo omit it. maint/dotfiles-maint.sh ALREADY runs brew
+# update/upgrade/cleanup unconditionally, before the system-apply block it reaches —
+# which is why that block's brew arm is a bare `:` with the comment "brew already
+# upgraded above". Declaring the flag would make the declared path run `brew upgrade`
+# a SECOND time in the same run. Omitting it reproduces today's behaviour exactly.
+
+# ── optional tools ────────────────────────────────────────────────────────────
+# NO TOOLS_OPTIN, deliberately. A declared list REPLACES Core's _CORE_DOCTOR_OPTIN
+# rather than adding to it, so declaring one means re-stating every optional tool.
+# PORTING-MATRIX.md's ²¹ table has no macOS column to derive a delta from — the
+# Brewfile installs the stack — so Core's default is the only honest answer and is
+# also what this box gets today.
