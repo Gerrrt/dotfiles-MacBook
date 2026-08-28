@@ -59,4 +59,4 @@ concurrency:
 
 jobs:
   tag:
-    uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@91cac104ff466dfe2316182336cd1f7767231b68 # v5.2.0
+    uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@5cb06ab4341de6ce07037e7f91c1e3e9da937de2 # v5.3.0
