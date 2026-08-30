@@ -1,15 +1,16 @@
 // .markdownlint.jsonc — house style for this repo's showcase README.
 //
 // This is a public OS-native layer, so its README is a deliverable landing page
-// and its markdown is worth linting. Run it with markdownlint-cli2 (the same
-// linter and rule set dotfiles-core uses for its own README):
+// and its markdown is worth linting. Run it the way CI does — the version pin and
+// the file list both come from the Makefile, so this stays one definition:
 //
-//     npx --yes markdownlint-cli2 README.md
+//     make markdownlint
 //
 // The vendored core/ tree is deliberately NOT linted here — it is a read-only
 // copy of dotfiles-core, gated by that repo's own CI; a finding there is fixed
-// upstream, not in this repo. This config is the local check for the README,
-// mirrored from Core; CI here gates this repo's own code, not its Markdown.
+// upstream, not in this repo. These rules ARE CI-enforced and cover more than the
+// README: ci.yml's `markdownlint` step runs that same target over every repo-owned
+// .md (Makefile :: MD_FILES), and it blocks.
 //
 // Two rules are deliberately off; everything else (the default rule set) stays
 // on to catch real structural defects — bad headings, broken lists, and the
