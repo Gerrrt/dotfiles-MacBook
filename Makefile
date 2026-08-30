@@ -24,6 +24,14 @@ SHFMT_FLAGS := -i 2
 # dotfiles-core's own CI.
 ZSH_FILES := zsh/zshenv zsh/zprofile zsh/zshrc os/macos.zsh
 
+# Repo-owned markdown. `git ls-files`, not a glob, for the same reason SH_FILES appends
+# two extensionless names: the glob missed real files. `"*.md" "sketchybar/*.md"` is
+# top-level-plus-one-directory, so the three .github/ templates were linted by NOTHING —
+# ci.yml runs this very target, so the gap was the gate's too, not just the local run.
+# The pathspec matches the one Core's reusable markdown leg uses, so this repo scans the
+# same set as the rest of the fleet even though its gate is its own (dotfiles-core#775).
+MD_FILES := $(shell git ls-files '*.md' ':!:core/**' 2>/dev/null)
+
 .PHONY: help lint fmt fmt-check shellcheck syntax zsh-syntax check core-advisory capabilities\
         tools test test-repo test-all bench bootstrap bootstrap-dry doctor sync-core \
         core-audit verify-core core-lock brew-check secrets config-check markdownlint pins-check \
@@ -107,10 +115,11 @@ config-check: ## Parse every repo-owned .json/.jsonc/.toml (karabiner, aerospace
 markdownlint: ## Lint repo-owned markdown against .markdownlint.jsonc (skips without node)
 	@# One recipe line — see the note above zsh-syntax (#156).
 	@if ! command -v npx >/dev/null 2>&1; then echo "  skip markdownlint (node/npx not installed)"; exit 0; fi; \
+	 if [ -z "$(MD_FILES)" ]; then echo "  no repo-owned .md"; exit 0; fi; \
 	 v="$$(sed -n 's/^MARKDOWNLINT_VERSION=//p' core/scripts/tool-versions.env | head -n1)"; \
-	 npx --yes "markdownlint-cli2@$${v:-latest}" "*.md" "sketchybar/*.md" >/dev/null \
-	   && echo "  markdownlint ok" \
-	   || { npx --yes "markdownlint-cli2@$${v:-latest}" "*.md" "sketchybar/*.md"; exit 1; }
+	 npx --yes "markdownlint-cli2@$${v:-latest}" $(MD_FILES) >/dev/null \
+	   && echo "  markdownlint ok ($(words $(MD_FILES)) files)" \
+	   || { npx --yes "markdownlint-cli2@$${v:-latest}" $(MD_FILES); exit 1; }
 
 core-advisory: ## Non-blocking shellcheck over vendored core/ (fixes land upstream)
 	@shellcheck $$(find core -name '*.sh') || \
