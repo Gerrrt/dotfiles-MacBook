@@ -1,11 +1,15 @@
 name: CI
 
-# Static-analysis gate for the repo-owned shell + the workflow itself, plus a
-# behavioral gate on the vendored Core layer. Dotfiles can't be unit-tested, so
-# shellcheck + shfmt + `bash -n`/`zsh -n` ARE the suite for repo-owned files; the
-# Core load-order + function tests (core/scripts/test-core.sh) catch the cross-
-# module breakage a `git subtree pull` can introduce. core/ static findings are
-# surfaced by a non-blocking advisory step (fixes land in dotfiles-core).
+# Static-analysis gate for the repo-owned shell + the workflow itself, plus an
+# integrity gate on the vendored Core layer. Dotfiles can't be unit-tested, so
+# shellcheck + shfmt + `bash -n`/`zsh -n` ARE the suite for repo-owned files.
+#
+# The vendored layer is gated by `verify-core`, which diffs core/ byte-for-byte against
+# the subset upstream says it should carry. It replaced a `core regression` job that ran
+# Core's own audit + behavioral suite out of core/ — that tooling is no longer vendored
+# (dotfiles-core#676), and the job ran on ubuntu-latest, so it was a second Linux run of
+# suites dotfiles-core's own CI already runs on the same tree before it is vendored here.
+# core/ static findings are surfaced by a non-blocking advisory step (fixes land upstream).
 
 on:
   # De-duplicated triggers: a PR'd branch previously ran CI TWICE (the `push` and the
@@ -207,35 +211,6 @@ jobs:
 
       - name: core/ advisory (non-blocking)
         run: make core-advisory
-
-  core-regression:
-    name: core regression
-    needs: changes
-    if: needs.changes.outputs.core == 'true' # the vendored Core subtree (audit + behavioral)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install zsh + PyYAML
-        # zsh drives the behavioral suite; python3-yaml lets the audit's YAML-parse gate
-        # run for real instead of skipping (python3/tomllib/json are already on the runner).
-        run: sudo apt-get update && sudo apt-get install -y zsh python3-yaml
-
-      # Gate the VENDORED Core subtree with its own audit BEFORE the behavioral suite:
-      # a `git subtree pull` can introduce manifest↔filesystem drift, a lost exec bit, a
-      # zsh/bash syntax break, or a malformed toml/yaml/json — none of which `make test`
-      # (load-order + function units) looks at. The shellcheck/luacheck/markdownlint/
-      # actionlint/gitleaks/nvim sections skip gracefully here (those are gated in
-      # dotfiles-core's own CI); this leg's job is to catch VENDORING drift, which the
-      # manifest/exec-bit/syntax/config sections cover with just zsh + python.
-      - name: Audit the vendored Core subtree (drift gate)
-        run: make core-audit
-
-      # Sources every Core zsh module in canonical order inside a hermetic shell
-      # and exercises the pure functions (mkcd/cdup/mkbak/extract/…). Self-skips
-      # the nvim sections (nvim not installed) and exits 0 on a bare box.
-      - name: Core load-order + function tests
-        run: make test
 
   # Byte-for-byte integrity of the vendored subtree against upstream @ the recorded
   # subtree-split commit — the backstop for drift the dir-granular manifest can't see
@@ -465,7 +440,7 @@ jobs:
   ci-ok:
     name: ci ok
     if: always()
-    needs: [changes, shell, core-regression, verify-core, actionlint, macos, precommit]
+    needs: [changes, shell, verify-core, actionlint, macos, precommit]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

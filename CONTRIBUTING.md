@@ -40,8 +40,7 @@ Humans and CI run the same commands, so "passes locally" means "passes in CI".
 ```bash
 make lint        # shellcheck · shfmt · bash -n · zsh -n · config parse · markdown · secrets
 make test-repo   # bootstrap (incl. provision), the zsh loader, defaults.sh — ~150 assertions
-make test        # the vendored Core regression harness  (CI only — see below)
-make verify-core # the vendored subtree is byte-for-byte upstream
+make verify-core # the vendored subtree is byte-for-byte what upstream says it should carry
 ```
 
 `pre-commit install` mirrors these at commit time. Each gate self-skips when its tool is
@@ -52,12 +51,16 @@ wrong in CI (a skip there reads as a pass). CI sets `VERIFY_CORE_STRICT=1` so an
 unverifiable run fails instead; set it locally too if you want to *prove* the subtree is
 clean rather than be told it couldn't be checked.
 
-> **Be patient with these two.** `make test` and `make core-audit` each take roughly
-> **6 minutes** on macOS, and the atuin section goes near-silent for ~4 of them — about 25
-> lines of output, then the rest arrives at once. That looks exactly like a wedge; it isn't.
-> Don't cap them at 90s and conclude they hang (I did, twice, and filed a bogus upstream
-> issue for it). If you interrupt them mid-run, the EXIT trap may not fire and a stub
-> process can be left behind — check with `pgrep -f atverify`.
+> **`make test` and `make core-audit` are gone** (dotfiles-core#676). They ran Core's own
+> `test-core.sh` / `audit-core.sh` out of the vendored subtree, and Core no longer vendors
+> them: `core/` is now `core.manifest` + `core.vendor`, and that authoring tooling is in
+> neither. Nothing is lost — both ran on `ubuntu-latest`, so they were a second Linux run of
+> the same suites dotfiles-core's own CI runs on the same tree before it is vendored here.
+> `make verify-core` is what gates the subtree now, and it checks it against upstream rather
+> than against `core/`'s own internal consistency.
+>
+> (They were also the two slow ones — ~6 minutes each, going near-silent partway through.
+> If you are looking for that warning because something seems wedged, it is no longer these.)
 
 ## Two lists that drift
 

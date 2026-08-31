@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# test/verify-core.sh — assert the vendored core/ subtree is BYTE-FOR-BYTE the upstream
-# dotfiles-core commit it was vendored from.
+# test/verify-core.sh — assert the vendored core/ subtree is BYTE-FOR-BYTE what the upstream
+# dotfiles-core commit it was vendored from says it should carry.
 # ──────────────────────────────────────────────────────────────────────────────
 # WHY THIS EXISTS: core/scripts/audit-core.sh proves the vendored tree is internally
 # consistent, but it canNOT prove it equals upstream — its manifest lists some entries at
@@ -11,6 +11,13 @@
 # vendored core/ against upstream AT THE RECORDED SUBTREE-SPLIT COMMIT, so ANY difference is
 # a genuine local modification — a `git subtree pull` conflict or a hand-edit — not just
 # "we're behind upstream" (which comparing against HEAD would noisily flag).
+#
+# "What it should carry" is not the whole upstream tree any more (dotfiles-core#676): Core
+# vendors `core.manifest` ∪ `core.vendor`. This script narrows the upstream side to that
+# subset using Core's OWN filter, sourced from the checkout it just fetched — see the block
+# below for why it does that rather than call `core-integrity.sh --self`. Both directions
+# still bite: a file present here but not in the subset is an orphan, and one in the subset
+# but missing here is an omission.
 #
 # Best-effort + graceful BY DEFAULT, like the other gates: when upstream is unreachable
 # (offline, a restricted runner) or no subtree marker exists, it SKIPS (exit 0) rather than
@@ -106,7 +113,7 @@ fi
 
 UPSTREAM="${CORE_UPSTREAM:-https://github.com/dotgibson/dotfiles-core}"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/verify-core.XXXXXX")"
-trap 'rm -rf "$TMP"' EXIT
+trap 'rm -rf "$TMP" "$TMP.expected" "$TMP.idx" "$TMP.diff"' EXIT
 
 # Fetch EXACTLY the recorded commit (shallow, like 45-plugins.zsh does for pinned plugins) —
 # GitHub serves arbitrary SHAs via fetch. A local-path CORE_UPSTREAM works the same way.
@@ -116,7 +123,56 @@ if ! git -C "$TMP" fetch -q --depth 1 origin "$SPLIT" 2>/dev/null; then
   skip "verify-core: upstream commit ${SPLIT:0:12} not fetchable from $UPSTREAM (offline/restricted) — cannot verify"
 fi
 git -C "$TMP" checkout -q FETCH_HEAD 2>/dev/null || skip "verify-core: could not check out ${SPLIT:0:12}"
-rm -rf "$TMP/.git" # compare working trees only
+
+# ── narrow the upstream side to what core/ is SUPPOSED to carry (dotfiles-core#676) ──
+# Core stopped vendoring its whole tree: a vendored core/ is now `core.manifest` ∪
+# `core.vendor`, roughly two thirds of it. (No count here on purpose — it moves whenever
+# either list does, and a stale number in a comment reads as a spec.) Diffing against
+# the full upstream checkout would
+# report every deliberately-dropped path as `Only in upstream: assets` and fail on a tree
+# nobody touched.
+#
+# WHY NOT `core/scripts/core-integrity.sh --self`, which does this comparison upstream:
+# it resolves the expected tree in Core's OBJECT STORE, and an OS repo does not have one.
+# Core's commits live in dotfiles-core and are never pushed here; the sync fetches them into
+# the working clone, but they are unreferenced and get pruned. Measured on a fresh clone
+# with no Core objects, that route reports `UNVERIFIABLE (locked sha not in Core history)`
+# — i.e. exactly the CI shape it would be running in. Fetching upstream ourselves, which is
+# what this script has always done, is the thing that makes it work without a sibling Core
+# clone; that is the property worth keeping.
+#
+# The filter is NOT re-implemented here. It is sourced from the UPSTREAM checkout we just
+# made, so it is by construction the same code, reading the same two lists, at the same
+# commit. A second implementation is what dotfiles-core#556 exists to prevent.
+#
+# A $SPLIT that PREDATES the allowlist has no such file, and then this whole block is
+# skipped and the comparison is the whole tree exactly as before — the same
+# presence-is-the-switch rule Core uses, so this gate spans the migration with no flag day.
+EXPECTED="$TMP"
+if [[ -r "$TMP/scripts/lib/core-vendor.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "$TMP/scripts/lib/core-vendor.sh"
+  if _vc_tree="$(core_vendor_effective_tree "$TMP" "$SPLIT" 2>/dev/null)" && [[ -n "$_vc_tree" ]]; then
+    EXPECTED="$TMP.expected"
+    mkdir -p "$EXPECTED"
+    # checkout-index rather than a second `git checkout`: it materializes an arbitrary tree
+    # into a prefix without touching HEAD, and takes the file MODES from the tree, so the
+    # exec bits stay comparable.
+    if ! GIT_INDEX_FILE="$TMP.idx" git -C "$TMP" read-tree "$_vc_tree" 2>/dev/null ||
+      ! GIT_INDEX_FILE="$TMP.idx" git -C "$TMP" checkout-index -a -f --prefix="$EXPECTED/" 2>/dev/null; then
+      fail "verify-core: could not materialize the expected vendored subset of ${SPLIT:0:12}"
+      exit 1
+    fi
+    echo ":: comparing against the VENDORED SUBSET of upstream ($(git -C "$TMP" ls-tree -r --name-only "$_vc_tree" | wc -l | tr -d ' ') of $(git -C "$TMP" ls-tree -r --name-only "${SPLIT}^{tree}" | wc -l | tr -d ' ') paths — core.manifest + core.vendor)"
+  else
+    # The commit carries core.vendor but the subset would not build. Do NOT fall through to
+    # the whole tree: that compares core/ against 100 files it is not supposed to have and
+    # reports a hand-edit that did not happen.
+    fail "verify-core: ${SPLIT:0:12} carries core.vendor but its vendored subset could not be computed — refusing to compare against the whole tree"
+    exit 1
+  fi
+fi
+rm -rf "$TMP/.git" "$TMP.idx" # compare working trees only
 
 # Byte-for-byte diff: upstream tree (files at its root) vs the vendored core/. `diff -rq`
 # reports both content differences AND files present on only one side (orphans / omissions).
@@ -137,7 +193,7 @@ rm -rf "$TMP/.git" # compare working trees only
 # `Only in core: .DS_Store` and fail. It never surfaced in CI because runners have no Finder.
 # It's macOS turd, never Core content, and os/macos.gitignore already excludes it from git;
 # excluding it here can't mask a genuine drift.
-if [[ ! -f "$TMP/nvim/lazy-lock.json" ]]; then
+if [[ ! -f "$EXPECTED/nvim/lazy-lock.json" ]]; then
   fail "upstream @ ${SPLIT:0:12} is missing nvim/lazy-lock.json — Core must ship the seed lockfile"
   exit 1
 fi
@@ -146,12 +202,14 @@ if [[ ! -f core/nvim/lazy-lock.json ]]; then
   exit 1
 fi
 echo ":: vendored core/ vs upstream dotfiles-core @ ${SPLIT:0:12} (lazy-lock.json: presence-checked, content excluded — machine-mutable; .DS_Store ignored)"
-if diff -rq -x lazy-lock.json -x .DS_Store "$TMP" core >"$TMP.diff" 2>&1; then
+if diff -rq -x lazy-lock.json -x .DS_Store "$EXPECTED" core >"$TMP.diff" 2>&1; then
   ok "vendored core/ is byte-for-byte upstream @ ${SPLIT:0:12} (lazy-lock.json excluded)"
   exit 0
 fi
 fail "vendored core/ DIFFERS from upstream @ ${SPLIT:0:12} — a subtree conflict or a hand-edit:"
 # Re-point diff's temp-dir paths at the friendlier 'upstream'/'core' labels for the report.
-sed -e "s#${TMP}#upstream#g" "$TMP.diff" | sed 's/^/    /' >&2
+# Longest first: $TMP is a prefix of $TMP.expected, so rewriting $TMP first would leave
+# a dangling `upstream.expected` in the report.
+sed -e "s#${TMP}.expected#upstream#g" -e "s#${TMP}#upstream#g" "$TMP.diff" | sed 's/^/    /' >&2
 fail "fix: revert the local change (edit upstream + re-sync), or re-run the subtree pull cleanly"
 exit 1
