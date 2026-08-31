@@ -34,3 +34,9 @@ ssh/*
 # host's per-service key NAMES (never key material) so they survive Core owning the
 # portable ssh config (dotgibson/dotfiles-core#450).
 !ssh/os.conf
+# ssh/hosts.conf.example → SEEDED (copied, never symlinked) to
+# ~/.ssh/config.d/10-hosts.conf on first bootstrap. Placeholders only: the seed is
+# tracked and public, the seeded copy in $HOME is untracked and carries the real
+# hosts. Adding this name does NOT widen `ssh/*` — a key dropped here is still
+# untracked unless it, too, is named above.
+!ssh/hosts.conf.example

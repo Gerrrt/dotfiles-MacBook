@@ -39,6 +39,23 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# REPO_HOOK — the contributor's pre-commit hook, resolved the way git resolves it.
+#
+# `$REPO/.git/hooks/pre-commit` is wrong in a WORKTREE: there `.git` is a regular FILE
+# holding `gitdir: …`, not a directory, so the path cannot resolve and every probe below
+# quietly read an empty string. Two tests then reported a false failure from any worktree
+# (this repo keeps them under .claude/worktrees/, and CLAUDE.md tells you to run
+# `make test-repo` after a Core sync — so the false red was easy to hit and easy to
+# believe). `rev-parse --git-path` answers correctly for a worktree, a submodule and a
+# plain checkout alike; worktrees legitimately SHARE the main repo's hooks, which is why
+# it points outside $REPO there.
+#
+# It returns an ABSOLUTE path in a worktree but a RELATIVE one in a plain checkout, so
+# absolutize the relative case rather than depending on the caller's cwd.
+REPO_HOOK="$(git -C "$REPO" rev-parse --git-path hooks/pre-commit 2>/dev/null || true)"
+[[ -n "$REPO_HOOK" ]] || REPO_HOOK="$REPO/.git/hooks/pre-commit"
+[[ "$REPO_HOOK" == /* ]] || REPO_HOOK="$REPO/$REPO_HOOK"
 QUIET=0
 [[ "${1:-}" == "--quiet" ]] && QUIET=1
 
@@ -251,7 +268,7 @@ else
   # shellcheck disable=SC2016  # $0 must expand when the STUB runs, not when it is written
   printf '#!/bin/sh\ntouch "$0.called"\nexit 0\n' >"$abin/pre-commit"
   chmod +x "$abin/mise" "$abin/brew" "$abin/pre-commit"
-  hook_before="$(cat "$REPO/.git/hooks/pre-commit" 2>/dev/null || true)"
+  hook_before="$(cat "$REPO_HOOK" 2>/dev/null || true)"
   # A FULL run (no --links-only/--no-brew): the provision path is the whole point.
   OUT="$(HOME="$ahome" PATH="$abin:$PATH" BOOTSTRAP_BREW="$abin/brew" BOOTSTRAP_PRE_COMMIT="$abin/pre-commit" BOOTSTRAP_ALLOW_NON_DARWIN=1 NO_COLOR=1 bash "$REPO/bootstrap.sh" 2>&1)"
   brc=$?
@@ -267,14 +284,14 @@ else
   # framework hook, in which case the run correctly reports it instead of reinstalling.
   if [[ -f "$abin/pre-commit.called" ]]; then
     ok "full run: the local pre-commit hook is installed"
-  elif grep -q '# start templated' "$REPO/.git/hooks/pre-commit" 2>/dev/null; then
+  elif grep -q '# start templated' "$REPO_HOOK" 2>/dev/null; then
     skipt "full run: the local pre-commit hook is installed (already present on this box)"
   else
     no "full run: the local pre-commit hook is installed" "the stub was never invoked"
   fi
   # And, whichever branch it took, it did NOT touch the real repo's hook.
   assert_eq "full run leaves the contributor's .git/hooks/pre-commit byte-identical" \
-    "$hook_before" "$(cat "$REPO/.git/hooks/pre-commit" 2>/dev/null || true)"
+    "$hook_before" "$(cat "$REPO_HOOK" 2>/dev/null || true)"
   rm -rf "$ahome" "$abin"
 fi
 
@@ -349,7 +366,7 @@ prov_clean() {
   PHOME="" PBIN=""
 }
 
-prov_hook_before="$(cat "$REPO/.git/hooks/pre-commit" 2>/dev/null || true)"
+prov_hook_before="$(cat "$REPO_HOOK" 2>/dev/null || true)"
 
 # ── case 1: the Command Line Tools are missing → STOP (bootstrap.sh:667-673) ──
 # The ONE case that gains coverage on Linux too: there `xcode-select` genuinely does not
@@ -556,7 +573,7 @@ fi
 
 # Whatever the branches did, none of it may touch the contributor's real hook (B1b3's rule).
 assert_eq "B1b4 left the contributor's .git/hooks/pre-commit byte-identical" \
-  "$prov_hook_before" "$(cat "$REPO/.git/hooks/pre-commit" 2>/dev/null || true)"
+  "$prov_hook_before" "$(cat "$REPO_HOOK" 2>/dev/null || true)"
 
 # ── B1c. bootstrap.sh: a degraded run REPORTS itself (#133) ───────────────────
 # Steps that must not abort the run (mise, defaults.sh, chsh, tpm) were each written
@@ -675,7 +692,7 @@ printf '#!/bin/sh\ntouch "$0.called"\nexit 0\n' >"$cbin/pre-commit"
 chmod +x "$cbin/mise" "$cbin/pre-commit"
 # Baseline for the "--links-only installs nothing" check further down. Taken before any
 # apply, because these runs drive bootstrap against the REAL working tree.
-ck_hook_before="$(cat "$REPO/.git/hooks/pre-commit" 2>/dev/null || true)"
+ck_hook_before="$(cat "$REPO_HOOK" 2>/dev/null || true)"
 run_checklist() { # → OUT, RC   (same sandbox each time, so state carries between calls)
   OUT="$(HOME="$chome" PATH="$cbin:$PATH" BOOTSTRAP_PRE_COMMIT="$cbin/pre-commit" \
     BOOTSTRAP_ALLOW_NON_DARWIN=1 NO_COLOR=1 \
@@ -708,7 +725,7 @@ assert_contains "a filled-in identity is confirmed instead" "$OUT" "git identity
 # (which SECURITY.md tells them to, and which a full ./bootstrap.sh now does for them) has
 # pre-commit's hook there legitimately, and an absolute assertion would fail on their box
 # for no reason. What must hold is that the run above did not MOVE it either way.
-hookf="$REPO/.git/hooks/pre-commit"
+hookf="$REPO_HOOK"
 hook_after="$(cat "$hookf" 2>/dev/null || true)"
 assert_eq "--links-only leaves .git/hooks/pre-commit byte-identical" "$ck_hook_before" "$hook_after"
 # What it reports still depends on the contributor's own hook, so assert the right thing
@@ -1087,6 +1104,123 @@ else
   else
     ok "dests covers all $_checked live link destination(s) ($_dynamic dynamic, $_absent source-absent, not checked)"
   fi
+fi
+
+# ── B3: ssh drop-in seam — the seed, the allowlist, and the deny it must not widen ──
+# This repo had ZERO ssh coverage until a working ~/.ssh/config was lost: it is a symlink
+# into the VENDORED core/ subtree, so the host stanzas written there were reverted by the
+# next Core sync and could never have been committed. The fix moved host stanzas to a
+# SEEDED (copied, never symlinked) drop-in. What follows guards the three properties that
+# fix depends on — most importantly that allowlisting the new file did not punch a hole in
+# the deny-by-default that keeps private keys untracked.
+section "ssh drop-in seam (seeded hosts config)"
+
+if [[ ! -f "$REPO/ssh/hosts.conf.example" ]]; then
+  no "ssh/hosts.conf.example exists" "the seed source bootstrap.sh copies from is missing"
+else
+  ok "ssh/hosts.conf.example exists"
+
+  # WHAT THIS GUARDS, and why it does not lean on `git check-ignore`:
+  #
+  # The invariant is .gitignore's SHAPE — `ssh/*` denies everything and a short, NAMED
+  # allowlist re-admits exactly the files that carry no secrets. Asserting that against
+  # the FILE is both the real subject and immune to repo health, which matters here: git
+  # check-ignore exits 128 ("must be run in a work tree") whenever core.bare is wrong, and
+  # an earlier version of this section read that 128 as "not ignored" and reported a
+  # phantom SECURITY REGRESSION — ssh/id_rsa had supposedly become trackable when nothing
+  # about .gitignore had changed. A test that cries wolf about key material is worse than
+  # no test. So: assert the shape unconditionally, then confirm the SEMANTICS with git
+  # only when git can actually answer, and SKIP (never fail) when it cannot.
+  # An ARRAY, not a space-joined string. An unquoted "$_str" expansion would be GLOBBED as
+  # well as split, and `ssh/*` — the single most dangerous thing that can appear on an
+  # allowlist line, because it re-admits every key — expands against the real ssh/
+  # directory into exactly the two permitted names and slips through. Caught by testing
+  # this guard against a doctored .gitignore rather than by reading it.
+  _gi="$REPO/.gitignore"
+  _deny=0 _seed=0 _bad=""
+  _alw=()
+  while IFS= read -r _line; do
+    [[ "$_line" == 'ssh/*' ]] && _deny=1
+    [[ "$_line" == '!ssh/'* ]] && _alw+=("${_line#!}")
+  done <"$_gi"
+  # Anything allowlisted beyond these two is a hole someone must justify deliberately.
+  # bash 3.2 + `set -u`: an empty array expansion is "unset", hence the +expansion guard.
+  for _a in ${_alw[@]+"${_alw[@]}"}; do
+    case "$_a" in
+    ssh/os.conf) ;;
+    ssh/hosts.conf.example) _seed=1 ;;
+    *) _bad="$_bad $_a" ;;
+    esac
+  done
+  if ((_deny == 0)); then
+    no "ssh/* stays deny-by-default" "the 'ssh/*' deny line is gone from .gitignore"
+  elif [[ -n "$_bad" ]]; then
+    no "ssh/* stays deny-by-default" "unexpected entries re-admitted:$_bad"
+  elif ((_seed == 0)); then
+    no "ssh/hosts.conf.example is allowlisted in .gitignore" "add '!ssh/hosts.conf.example' beside '!ssh/os.conf'"
+  else
+    ok "ssh/* stays deny-by-default, allowlisting only os.conf + hosts.conf.example"
+  fi
+
+  # Semantic confirmation, best-effort. 0 = ignored, 1 = not ignored, 128 = git could not
+  # answer (an unhealthy repo) — which SKIPS, because "unknown" is not "regression".
+  _ci() {
+    git -C "$REPO" check-ignore -q "$1" 2>/dev/null
+    case $? in
+    0) printf '0' ;;
+    1) printf '1' ;;
+    *) printf 'err' ;;
+    esac
+  }
+  _key="$(_ci ssh/id_rsa)" _seed="$(_ci ssh/hosts.conf.example)"
+  if [[ "$_key" == err || "$_seed" == err ]]; then
+    skipt "git agrees with the .gitignore shape (check-ignore could not run — repo unhealthy, e.g. core.bare)"
+  elif [[ "$_key" == 0 && "$_seed" == 1 ]]; then
+    ok "git agrees: ssh/id_rsa ignored, ssh/hosts.conf.example trackable"
+  else
+    no "git agrees with the .gitignore shape" "check-ignore says id_rsa=$_key (want 0) hosts.conf.example=$_seed (want 1)"
+  fi
+
+  # The TRACKED seed is public; a real host pasted into it leaks internal topology. Catch
+  # the RFC1918 literals and a bare `HostName` that is not commented out.
+  if grep -nE '^[[:space:]]*(HostName|User|Port)[[:space:]]' "$REPO/ssh/hosts.conf.example" >/dev/null 2>&1; then
+    no "ssh/hosts.conf.example carries placeholders only" "it has a LIVE (uncommented) stanza — this file is public"
+  elif grep -qE '(^|[^0-9])(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)[0-9]' "$REPO/ssh/hosts.conf.example"; then
+    no "ssh/hosts.conf.example carries no real hosts" "an RFC1918 address is present — real hosts belong in the untracked copy"
+  else
+    ok "ssh/hosts.conf.example carries placeholders only (no live stanza, no RFC1918 host)"
+  fi
+fi
+
+# bootstrap.sh must SEED this file, never link it: blib_link would make it a symlink into
+# the repo and a `git add -A` would then track real hostnames into a PUBLIC repo.
+# The single quotes are load-bearing in both greps below: they match the LITERAL text
+# `$REPO` in bootstrap.sh's source, not this script's expansion of it. SC2016 reads that
+# as a mistake here, the same way it does for the B2b patterns above.
+# shellcheck disable=SC2016
+if grep -q 'blib_seed "$REPO/ssh/hosts.conf.example"' "$REPO/bootstrap.sh"; then
+  ok "bootstrap.sh seeds the hosts drop-in (copied, not symlinked)"
+else
+  no "bootstrap.sh seeds the hosts drop-in" "no blib_seed call for ssh/hosts.conf.example"
+fi
+# shellcheck disable=SC2016
+if grep -qE 'blib_link "\$REPO/ssh/hosts\.conf\.example"' "$REPO/bootstrap.sh"; then
+  no "the hosts drop-in is never symlinked" "found a blib_link for it — that would track real hosts"
+else
+  ok "the hosts drop-in is never symlinked"
+fi
+
+# The guardrail that would have caught the original loss must exist AND be invoked —
+# a defined-but-uncalled probe is the silent failure this whole section exists to prevent.
+if grep -q '^check_ssh_dropins() {' "$REPO/bootstrap.sh"; then
+  ok "check_ssh_dropins is defined"
+  if grep -qE '^[[:space:]]+check_ssh_dropins$' "$REPO/bootstrap.sh"; then
+    ok "check_ssh_dropins is invoked from the closing checklist"
+  else
+    no "check_ssh_dropins is invoked" "defined but never called — the probe would never run"
+  fi
+else
+  no "check_ssh_dropins is defined" "the core/-drift probe is missing from bootstrap.sh"
 fi
 
 # ── summary ───────────────────────────────────────────────────────────────────

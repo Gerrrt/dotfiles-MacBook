@@ -1,0 +1,63 @@
+# dotfiles-MacBook/ssh/hosts.conf.example → seeded to ~/.ssh/config.d/10-hosts.conf
+# ──────────────────────────────────────────────────────────────────────────────
+# A STARTER file, not a live config. bootstrap.sh copies it (Core's blib_seed) to
+# ~/.ssh/config.d/10-hosts.conf only when that file is ABSENT, and never touches it
+# again — so the copy is yours to edit and no bootstrap can clobber it.
+#
+# WHY THIS EXISTS
+# ---------------
+# ~/.ssh/config is a SYMLINK into core/ssh/config, and core/ is a vendored git
+# subtree of dotfiles-core. Host stanzas written there are reverted by the next
+# Core sync, blocked by the pre-commit guard, and rejected by the core-integrity
+# CI job — they can never be saved. One was lost exactly that way. This file, and
+# the ~/.ssh/config.d/ drop-in it seeds, is where host stanzas actually belong.
+#
+# WHY THE COPY IS NOT TRACKED
+# ---------------------------
+# Real host stanzas name internal addresses, ports and usernames, and this repo is
+# PUBLIC. So the SEED is tracked (allowlisted in .gitignore beside ssh/os.conf) and
+# carries placeholders only; the seeded copy in $HOME is untracked and carries the
+# real thing. Never paste a real host into this file.
+#
+# The tracked/untracked split, end to end:
+#
+#   ssh/hosts.conf.example  (tracked, placeholders)  --seed-->  ~/.ssh/config.d/10-hosts.conf
+#   ssh/os.conf             (tracked, public-safe)   --link-->  ~/.ssh/config.d/50-os.conf
+#   core/ssh/config         (vendored, read-only)    --link-->  ~/.ssh/config
+#
+# PRECEDENCE
+# ----------
+# core/ssh/config Includes ~/.ssh/config.d/*.conf as its FIRST directive, and ssh is
+# first-obtained-value-wins, so drop-ins beat Core's `Host *` defaults. The numeric
+# prefixes are the tie-break between drop-ins: 10- is reached before 50-.
+#
+# IdentityFile is the one keyword that ACCUMULATES instead of first-winning — a key
+# named here is OFFERED FIRST but does not displace Core's ~/.ssh/id_ed25519. A host
+# that must offer exactly one key needs `IdentitiesOnly yes` alongside it.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Give a host a short alias by listing both names on the Host line: the alias for
+# typing, the real address so the long form keeps working too.
+#
+#   Host myserver 192.0.2.10
+#     HostName 192.0.2.10
+#     Port 2222
+#     User me
+#
+# A host behind a bastion:
+#
+#   Host internal
+#     HostName internal.example.invalid
+#     User me
+#     ProxyJump bastion.example.invalid
+#
+# A host with its own key, offered first and exclusively:
+#
+#   Host deploy
+#     HostName deploy.example.invalid
+#     User deploy
+#     IdentityFile ~/.ssh/id_ed25519_deploy
+#     IdentitiesOnly yes
+
+# Verify any stanza you add without connecting:
+#   ssh -G myserver | grep -E '^(hostname|port|user) '

@@ -48,6 +48,13 @@ What belongs **here** is only the OS-native layer: the `Brewfile`, OS overlays, 
 - `ssh/os.conf` — this host's ssh overlay, linked to `~/.ssh/config.d/50-os.conf`. The
   portable client config is Core's (`core/ssh/config`); only this overlay is tracked here,
   and keys never are (dotgibson/dotfiles-core#450)
+- `ssh/hosts.conf.example` — starter **seeded** (copied, never symlinked) to
+  `~/.ssh/config.d/10-hosts.conf` on first bootstrap, then never clobbered.
+  **Never edit `~/.ssh/config`**: it is a symlink into vendored `core/`, so stanzas
+  written there are reverted by the next Core sync and rejected by the pre-commit guard
+  and `core-integrity` CI — a working host config was lost exactly that way. Host stanzas
+  go in `~/.ssh/config.d/*.conf`, which `core/ssh/config` Includes *first*
+  (ssh is first-match-wins). `check_ssh_dropins` in `bootstrap.sh` reports the condition.
 - `bootstrap.sh`, `Makefile` — install + dev entry points
 - `test/` — `test-repo.sh` (behavioral), `verify-core.sh` + `check-configs.sh` (gates)
 - `core/` — vendored Core (read-only here; edit upstream in dotfiles-core)
