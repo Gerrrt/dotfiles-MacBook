@@ -126,7 +126,9 @@ git -C "$TMP" checkout -q FETCH_HEAD 2>/dev/null || skip "verify-core: could not
 
 # ── narrow the upstream side to what core/ is SUPPOSED to carry (dotfiles-core#676) ──
 # Core stopped vendoring its whole tree: a vendored core/ is now `core.manifest` ∪
-# `core.vendor` — 185 paths, not 285. Diffing against the full upstream checkout would
+# `core.vendor`, roughly two thirds of it. (No count here on purpose — it moves whenever
+# either list does, and a stale number in a comment reads as a spec.) Diffing against
+# the full upstream checkout would
 # report every deliberately-dropped path as `Only in upstream: assets` and fail on a tree
 # nobody touched.
 #
