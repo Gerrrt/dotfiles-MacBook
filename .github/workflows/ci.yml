@@ -1,11 +1,15 @@
 name: CI
 
-# Static-analysis gate for the repo-owned shell + the workflow itself, plus a
-# behavioral gate on the vendored Core layer. Dotfiles can't be unit-tested, so
-# shellcheck + shfmt + `bash -n`/`zsh -n` ARE the suite for repo-owned files; the
-# Core load-order + function tests (core/scripts/test-core.sh) catch the cross-
-# module breakage a `git subtree pull` can introduce. core/ static findings are
-# surfaced by a non-blocking advisory step (fixes land in dotfiles-core).
+# Static-analysis gate for the repo-owned shell + the workflow itself, plus an
+# integrity gate on the vendored Core layer. Dotfiles can't be unit-tested, so
+# shellcheck + shfmt + `bash -n`/`zsh -n` ARE the suite for repo-owned files.
+#
+# The vendored layer is gated by `verify-core`, which diffs core/ byte-for-byte against
+# the subset upstream says it should carry. It replaced a `core regression` job that ran
+# Core's own audit + behavioral suite out of core/ — that tooling is no longer vendored
+# (dotfiles-core#676), and the job ran on ubuntu-latest, so it was a second Linux run of
+# suites dotfiles-core's own CI already runs on the same tree before it is vendored here.
+# core/ static findings are surfaced by a non-blocking advisory step (fixes land upstream).
 
 on:
   # De-duplicated triggers: a PR'd branch previously ran CI TWICE (the `push` and the
