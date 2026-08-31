@@ -33,8 +33,8 @@ ZSH_FILES := zsh/zshenv zsh/zprofile zsh/zshrc os/macos.zsh
 MD_FILES := $(shell git ls-files '*.md' ':!:core/**' 2>/dev/null)
 
 .PHONY: help lint fmt fmt-check shellcheck syntax zsh-syntax check core-advisory capabilities\
-        tools test test-repo test-all bench bootstrap bootstrap-dry doctor sync-core \
-        core-audit verify-core core-lock brew-check secrets config-check markdownlint pins-check \
+        tools test-repo bootstrap bootstrap-dry doctor sync-core \
+        verify-core core-lock brew-check secrets config-check markdownlint pins-check \
         trap-guard skip-guards
 
 help: ## Show this help
@@ -125,9 +125,6 @@ core-advisory: ## Non-blocking shellcheck over vendored core/ (fixes land upstre
 	@shellcheck $$(find core -name '*.sh') || \
 	  echo "(advisory) core/ findings above are fixed upstream in dotfiles-core"
 
-core-audit: ## Gate the vendored Core subtree with its OWN audit (manifest/exec-bits/syntax/config drift a subtree pull can introduce)
-	@cd core && ./scripts/audit-core.sh --quiet
-
 # The THIRD reference to a Core commit. core-integrity and verify-core gate the subtree
 # and core.lock; nothing gated the workflow pins, so a sync could advance the tree while
 # the callers kept running the PREVIOUS Core's reusables — with every gate green. The
@@ -177,19 +174,26 @@ core-lock: ## Explain why core.lock is NOT regenerated here (it is written by Co
 	@echo "  Then check this repo with:  make verify-core"
 
 
-test: ## Run the vendored Core regression harness (self-skips without zsh)
-	@cd core && ./scripts/test-core.sh
+# `test`, `test-all`, `bench` and `core-audit` are GONE (dotfiles-core#676). They ran
+# Core's own authoring tooling — audit-core.sh, test-core.sh, bench-core.sh — out of the
+# vendored subtree, and Core stopped vendoring it: a vendored core/ is now core.manifest +
+# core.vendor, and that tooling is in neither.
+#
+# Nothing is actually lost. They ran on ubuntu-latest, so they were never macOS-hardware
+# coverage — they were a second Linux run of the exact suites dotfiles-core's own CI runs
+# on the same tree, before it was ever vendored here. Keeping them would have meant Core
+# shipping most of scripts/ (test-core.sh alone is 833 KB) into all nine repos to serve one.
+#
+# What still gates the subtree HERE, and gates it better: `make verify-core` diffs core/
+# byte-for-byte against the vendored subset of upstream at the recorded commit, so drift,
+# orphans and omissions are all caught against the source of truth rather than against
+# core/'s own internal consistency.
 
 # skip-guards is a prerequisite here, NOT in `lint`: it drives `make` itself, and nesting a
 # recursive make inside the lint graph is both surprising and slow. It is a behavioural
 # assertion about the Makefile, so it belongs with the behavioural tests.
 test-repo: skip-guards ## Run THIS repo's behavioral tests (bootstrap.sh, zsh loader, defaults.sh)
 	@./test/test-repo.sh
-
-test-all: test-repo test ## Run repo-owned tests + the vendored Core harness
-
-bench: ## Measure Core shell-startup cost (set CORE_BENCH_BUDGET_MS to gate)
-	@cd core && ./scripts/bench-core.sh
 
 brew-check: ## Verify every Brewfile formula/cask is installed (the reproducibility gate; run on macOS)
 	@command -v brew >/dev/null 2>&1 || { echo "  brew not found — run this on macOS"; exit 1; }
