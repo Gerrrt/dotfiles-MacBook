@@ -884,6 +884,56 @@ check_git_identity() {
   return 0
 }
 
+# check_ssh_dropins — report the trap that ate a working ~/.ssh/config.
+#
+# ~/.ssh/config is a SYMLINK into core/, a VENDORED git subtree. Editing it therefore
+# edits Core: the change cannot be committed (the pre-commit guard and the core-integrity
+# CI job both reject a hand-edit) and it is reverted wholesale by the next Core sync. The
+# failure is silent in both directions — nothing warns at edit time, and the sync that
+# undoes it reports only "synced". A host stanza was lost that way; this probe closes the
+# window between the edit and the sync, which is the only moment the evidence still exists.
+#
+# Uses `git status --porcelain`, NOT `make verify-core`: test/verify-core.sh fetches
+# upstream and SKIPS gracefully when offline, so it is both too slow for a bootstrap run
+# and unable to promise an answer. The porcelain check is local, instant, and detects this
+# exact failure (a modification sitting in the vendored tree awaiting revert). It cannot
+# see an edit that a sync ALREADY reverted — nothing can; that is why it runs every time.
+check_ssh_dropins() {
+  blib_want tools || return 0
+  local cfg="$HOME/.ssh/config" want="$REPO/core/ssh/config" dirty="" n=0 shown=""
+
+  # 1) Is ~/.ssh/config still ours? A real file here is the operator's own (bootstrap
+  #    would have backed theirs up and relinked), so say so rather than assume breakage.
+  if [[ -L "$cfg" ]]; then
+    # Compare the LINK TARGET, not the realpath: a target under core/ is the thing worth
+    # reporting, and readlink is present everywhere while `realpath` is not on stock macOS.
+    local tgt=""
+    tgt="$(readlink "$cfg" 2>/dev/null)" || tgt=""
+    if [[ "$tgt" != "$want" ]]; then
+      todo_step "~/.ssh/config points at $tgt, not this repo — re-run ./bootstrap.sh --links-only if that is not deliberate"
+    fi
+  elif [[ -e "$cfg" ]]; then
+    todo_step "~/.ssh/config is a real file, not this repo's symlink — bootstrap will back it up and relink on the next run; move anything you want to keep into ~/.ssh/config.d/*.conf first"
+  fi
+
+  # 2) Uncommitted edits anywhere under core/ — the actual data-loss condition.
+  #    `|| dirty=""`: a standalone assignment from a command substitution IS the command
+  #    under `set -e`, and git exits non-zero outside a work tree, which would abort the
+  #    run one line before the checklist that exists to report it (same trap as
+  #    check_git_identity's `git config` calls).
+  command -v git >/dev/null 2>&1 || return 0
+  dirty="$(git -C "$REPO" status --porcelain -- core/ 2>/dev/null)" || dirty=""
+  if [[ -n "$dirty" ]]; then
+    n="$(printf '%s\n' "$dirty" | wc -l | tr -d ' ')"
+    # Name at most three files: the operator needs to recognise the edit, not read a diff.
+    shown="$(printf '%s\n' "$dirty" | awk '{print $NF}' | head -3 | tr '\n' ' ')"
+    todo_step "vendored core/ has $n uncommitted edit(s) the next Core sync WILL revert: ${shown% } — Core is not editable here; put ssh host stanzas in ~/.ssh/config.d/*.conf and other changes upstream in dotfiles-core"
+  else
+    done_step "ssh drop-ins intact (vendored core/ is clean; host stanzas live in ~/.ssh/config.d/)"
+  fi
+  return 0
+}
+
 # _tmux_plugin_count <plugins-dir> — how many plugins are installed, i.e. any directory in
 # there other than tpm itself. Cheap, and true of a hand-installed box too. Used twice: to
 # decide whether there is anything to do, and to VERIFY that doing it worked.
@@ -1088,6 +1138,46 @@ wire_links() {
   # stderr, so this output never reaches the JSON object on fd3 regardless.)
   blib_link_core "$REPO" "$CFG"
   blib_link_os_layer "$REPO" "$CFG" macos
+
+  # ── private ssh host stanzas — SEEDED, not linked ─────────────────────────
+  # ~/.ssh/config is a SYMLINK into the vendored core/ subtree, so host stanzas written
+  # there are reverted by the next Core sync and rejected by the pre-commit guard and
+  # core-integrity CI. A working host config was lost exactly that way. The drop-in
+  # below is the seam that survives: core/ssh/config Includes ~/.ssh/config.d/*.conf as
+  # its FIRST directive (ssh is first-match-wins), and 10- sorts ahead of 50-os.conf.
+  #
+  # blib_seed and NOT blib_link, deliberately. This file names real internal hosts,
+  # ports and usernames, and this repo is PUBLIC — so the seed is tracked and carries
+  # placeholders while the copy in $HOME carries the real thing. blib_seed copies only
+  # when the destination is ABSENT and leaves a present file untouched, so re-running
+  # bootstrap can never clobber it. That is the entire point of the exercise.
+  #
+  # Deliberately NOT in uninstall()'s dests array: it is a real file the operator owns,
+  # and unlink_dest reports "skip (not ours)" for a non-symlink — so --uninstall leaves
+  # it alone, which is correct. Test B2b only parses blib_link pairs, so a seeded
+  # destination is outside its remit either way.
+  #
+  # Rides with the `tools` group, matching how the scaffold gates every other ssh
+  # action (core/lib/bootstrap-lib.sh: the ssh block in blib_link_core, and the
+  # ssh/os.conf overlay in blib_link_os_layer). Placed AFTER blib_link_os_layer so
+  # ~/.ssh/config.d already exists at 0700, and BEFORE the tally fold below so the
+  # seed is counted in n_seeded like any other.
+  if blib_want tools; then
+    local _ssh_hosts="$HOME/.ssh/config.d/10-hosts.conf" _ssh_hosts_new=0
+    # Record absence BEFORE seeding: the chmod below must touch only a file WE created,
+    # never re-mode one the operator already owns and may have deliberately widened.
+    [[ -e "$_ssh_hosts" ]] || _ssh_hosts_new=1
+    blib_seed "$REPO/ssh/hosts.conf.example" "$_ssh_hosts" \
+      "your private host stanzas — untracked (~/.ssh/config is Core's and gets reverted)"
+    # 0600: ssh only REFUSES a group/world-writable config, but this one accumulates
+    # internal hostnames and usernames, so it gets the same treatment as a key. Guarded
+    # on DRY because blib_seed creates nothing in a dry run and chmod would then fail on
+    # an absent path, aborting the run under `set -e` in the one mode that promises to
+    # change nothing.
+    if ((DRY == 0)) && ((_ssh_hosts_new)) && [[ -f "$_ssh_hosts" ]]; then
+      chmod 600 "$_ssh_hosts"
+    fi
+  fi
   # fold the scaffold's tallies into this run's summary so --json / print_summary stay accurate
   n_linked=$((n_linked + BLIB_LINKED))
   n_backed=$((n_backed + BLIB_BACKED))
@@ -1477,6 +1567,7 @@ verify_tools
 if ((DRY == 0)); then
   check_desktop_permissions
   check_git_identity
+  check_ssh_dropins
 fi
 
 print_summary "summary"
