@@ -33,8 +33,8 @@ ZSH_FILES := zsh/zshenv zsh/zprofile zsh/zshrc os/macos.zsh
 MD_FILES := $(shell git ls-files '*.md' ':!:core/**' 2>/dev/null)
 
 .PHONY: help lint fmt fmt-check shellcheck syntax zsh-syntax check core-advisory capabilities\
-        tools test-repo bootstrap bootstrap-dry doctor sync-core \
-        verify-core core-lock brew-check secrets config-check markdownlint pins-check \
+        tools test test-repo bootstrap bootstrap-dry dry-run doctor sync-core \
+        verify-core core-verify core-lock brew-check packages-check secrets config-check markdownlint pins-check \
         trap-guard skip-guards
 
 help: ## Show this help
@@ -174,7 +174,9 @@ core-lock: ## Explain why core.lock is NOT regenerated here (it is written by Co
 	@echo "  Then check this repo with:  make verify-core"
 
 
-# `test`, `test-all`, `bench` and `core-audit` are GONE (dotfiles-core#676). They ran
+# The Core-authoring `test`, `test-all`, `bench` and `core-audit` are GONE
+# (dotfiles-core#676) — NOT to be confused with the fleet-canonical `test` further down,
+# which is a thin alias for this repo's OWN suite (test-repo). The removed ones ran
 # Core's own authoring tooling — audit-core.sh, test-core.sh, bench-core.sh — out of the
 # vendored subtree, and Core stopped vendoring it: a vendored core/ is now core.manifest +
 # core.vendor, and that tooling is in neither.
@@ -221,6 +223,24 @@ sync-core: ## Reminder: how the vendored Core subtree gets updated
 	@echo "    make sync                     # in a dotfiles-core checkout"
 
 check: lint ## Alias for `lint`
+
+# ── the fleet make vocabulary (dotfiles-core#691, audited by #846 §5h) ─────────
+# Core declares ONE canonical verb set every vendoring repo must answer to —
+# help lint check dry-run packages-check core-verify test — so a fleet-wide
+# `make <verb>` resolves in every repo no matter each repo's historical spelling.
+# This repo already did the work under its own names; the four rules below add
+# the canonical spelling as thin `.PHONY` aliases pointing AT those existing
+# recipe holders (bootstrap-dry/brew-check/verify-core/test-repo), in the same
+# shape as `check: lint` above (the old names keep working — they still hold the
+# recipes; `make <canonical>` just resolves through to them). None is a
+# stub: this repo genuinely does each — it ships a Brewfile (packages-check), a
+# vendored subtree (core-verify) and its own behavioral suite (test). Verify with
+# `make fleet-vocabulary` from a Core checkout; this repo's register row turns
+# all-`ok`. See VENDORING.md § "The `make` vocabulary, and the test floor" in Core.
+dry-run: bootstrap-dry ## Alias for `bootstrap-dry` (fleet-canonical verb)
+packages-check: brew-check ## Alias for `brew-check` (fleet-canonical verb)
+core-verify: verify-core ## Alias for `verify-core` (fleet-canonical verb)
+test: test-repo ## Alias for `test-repo` (fleet-canonical verb; runs the suite)
 
 tools: ## Verify the lint toolchain is installed
 	@for t in shellcheck shfmt; do \
