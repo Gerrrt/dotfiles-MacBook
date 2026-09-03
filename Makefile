@@ -228,9 +228,11 @@ check: lint ## Alias for `lint`
 # Core declares ONE canonical verb set every vendoring repo must answer to —
 # help lint check dry-run packages-check core-verify test — so a fleet-wide
 # `make <verb>` resolves in every repo no matter each repo's historical spelling.
-# This repo already did the work under its own names; the four below are thin
-# `.PHONY` aliases to the canonical spelling, in the same shape as `check: lint`
-# above (the old names keep working — they are the recipe holders). None is a
+# This repo already did the work under its own names; the four rules below add
+# the canonical spelling as thin `.PHONY` aliases pointing AT those existing
+# recipe holders (bootstrap-dry/brew-check/verify-core/test-repo), in the same
+# shape as `check: lint` above (the old names keep working — they still hold the
+# recipes; `make <canonical>` just resolves through to them). None is a
 # stub: this repo genuinely does each — it ships a Brewfile (packages-check), a
 # vendored subtree (core-verify) and its own behavioral suite (test). Verify with
 # `make fleet-vocabulary` from a Core checkout; this repo's register row turns
