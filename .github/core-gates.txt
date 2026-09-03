@@ -10,5 +10,5 @@
 # "not covered" from "covered elsewhere", which has already produced two issues filed in
 # good faith against gates this repo does satisfy (#154, #178).
 
-bootstrap-test own ci.yml "macos smoke" runs provision() on a macOS runner via `make test-repo` and the BOOTSTRAP_BREW seam, marked REPO_TESTS_GATE_PROVISION=1 so test-repo.sh section G2 fails if those sections all self-skipped. bootstrap-test.yml is Linux-container-only and this repo's provision() hard-exits without the Command Line Tools, so it can never be a caller.
+bootstrap-test own ci.yml "macos smoke" runs provision() on a macOS runner via `make test` and the BOOTSTRAP_BREW seam, marked REPO_TESTS_GATE_PROVISION=1 so test-repo.sh section G2 fails if those sections all self-skipped. bootstrap-test.yml is Linux-container-only and this repo's provision() hard-exits without the Command Line Tools, so it can never be a caller.
 lint-call own ci.yml "shell lint" runs `make lint` — shellcheck, shfmt, bash/zsh syntax, RETURN-trap discipline, config-check, markdownlint, gitleaks under core/gitleaks.toml, and pins-check. A superset of lint-call.yml's legs; its '*.sh' pathspec also cannot see the extensionless sketchybar/sketchybarrc.

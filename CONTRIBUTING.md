@@ -30,7 +30,7 @@ To change shared config, edit it **in `dotfiles-core`**. A release there fans ou
 
 ```bash
 ./bootstrap.sh --links-only   # re-wire any new/changed Core files
-make test-repo                # prove the new Core still loads (exercises the loader)
+make test                     # prove the new Core still loads (exercises the loader)
 ```
 
 ## Green the gate
@@ -38,26 +38,35 @@ make test-repo                # prove the new Core still loads (exercises the lo
 Humans and CI run the same commands, so "passes locally" means "passes in CI".
 
 ```bash
-make lint        # shellcheck · shfmt · bash -n · zsh -n · config parse · markdown · secrets
-make test-repo   # bootstrap (incl. provision), the zsh loader, defaults.sh — ~150 assertions
-make verify-core # the vendored subtree is byte-for-byte what upstream says it should carry
+make lint         # shellcheck · shfmt · bash -n · zsh -n · config parse · markdown · secrets
+make test         # bootstrap (incl. provision), the zsh loader, defaults.sh — ~150 assertions
+make core-verify  # the vendored subtree is byte-for-byte what upstream says it should carry
 ```
+
+Those are the fleet's canonical verb names, declared once in `dotfiles-core`'s
+`scripts/make-vocabulary.txt` so a target means the same thing in every repo
+([dotgibson/dotfiles-core#691](https://github.com/dotgibson/dotfiles-core/issues/691)).
+`test-repo`, `verify-core`, `brew-check` and `bootstrap-dry` are kept as aliases, so
+nothing you already type breaks.
 
 `pre-commit install` mirrors these at commit time. Each gate self-skips when its tool is
 missing, so `make lint` still works on a bare box — but CI has them all.
 
-`make verify-core` also skips when it cannot reach upstream, which is right on a laptop and
+`make core-verify` also skips when it cannot reach upstream, which is right on a laptop and
 wrong in CI (a skip there reads as a pass). CI sets `VERIFY_CORE_STRICT=1` so an
 unverifiable run fails instead; set it locally too if you want to *prove* the subtree is
 clean rather than be told it couldn't be checked.
 
-> **`make test` and `make core-audit` are gone** (dotfiles-core#676). They ran Core's own
-> `test-core.sh` / `audit-core.sh` out of the vendored subtree, and Core no longer vendors
-> them: `core/` is now `core.manifest` + `core.vendor`, and that authoring tooling is in
+> **`make test` no longer runs *Core's* suite, and `make core-audit` is gone**
+> (dotfiles-core#676). Both ran Core's own `test-core.sh` / `audit-core.sh` out of the
+> vendored subtree, and Core no longer vendors them: `core/` is now `core.manifest` + `core.vendor`, and that authoring tooling is in
 > neither. Nothing is lost — both ran on `ubuntu-latest`, so they were a second Linux run of
 > the same suites dotfiles-core's own CI runs on the same tree before it is vendored here.
-> `make verify-core` is what gates the subtree now, and it checks it against upstream rather
-> than against `core/`'s own internal consistency.
+> `make core-verify` is what gates the subtree now, and it checks it against upstream rather
+> than against `core/`'s own internal consistency. The name `test` has since been reclaimed
+> for **this repo's** suite — the fleet's canonical verb for it (dotfiles-core#691) — so
+> `make test` and `make test-repo` are now the same thing, and neither runs anything out of
+> `core/`.
 >
 > (They were also the two slow ones — ~6 minutes each, going near-silent partway through.
 > If you are looking for that warning because something seems wedged, it is no longer these.)

@@ -23,7 +23,7 @@ The local pre-commit guard and the `core-integrity` job will both reject it anyw
 ## Checks
 
 - [ ] `make lint` is green (shellcheck, shfmt, `bash -n`/`zsh -n`, config parse, markdown, secrets)
-- [ ] `make test-repo` is green
+- [ ] `make test` is green
 - [ ] If the installer changed: `./bootstrap.sh --links-only --dry-run` still reports a sane plan
 - [ ] If a new file needs wiring, `bootstrap.sh` **and** the `--uninstall` destination list
       were both updated (they are separate lists — this is where drift happens)

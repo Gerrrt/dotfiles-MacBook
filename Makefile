@@ -33,9 +33,9 @@ ZSH_FILES := zsh/zshenv zsh/zprofile zsh/zshrc os/macos.zsh
 MD_FILES := $(shell git ls-files '*.md' ':!:core/**' 2>/dev/null)
 
 .PHONY: help lint fmt fmt-check shellcheck syntax zsh-syntax check core-advisory capabilities\
-        tools test-repo bootstrap bootstrap-dry doctor sync-core \
-        verify-core core-lock brew-check secrets config-check markdownlint pins-check \
-        trap-guard skip-guards
+        tools test test-repo bootstrap dry-run bootstrap-dry doctor sync-core \
+        core-verify verify-core core-lock packages-check brew-check secrets config-check \
+        markdownlint pins-check trap-guard skip-guards
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -132,8 +132,20 @@ core-advisory: ## Non-blocking shellcheck over vendored core/ (fixes land upstre
 pins-check: ## Assert the reusable-workflow SHA pins equal core.lock's core_sha
 	@./test/check-pins.sh
 
-verify-core: ## Assert vendored core/ is byte-for-byte upstream @ the recorded subtree-split (catches hand-edits + orphans the dir-level manifest misses)
+# ── the canonical fleet verbs (dotgibson/dotfiles-core#691) ───────────────────
+# `core-verify`, `test`, `dry-run` and `packages-check` are four of the seven names every
+# repo that vendors Core must answer to (Core's scripts/make-vocabulary.txt; `make
+# fleet-vocabulary` there renders the register that checks it). Before that list, "verify
+# core" had five spellings across nine repos — this repo alone carried `verify-core`,
+# `core-advisory` and `core-audit` — "dry run" had two, and only `help` was common to every
+# Makefile. The requirement is that the CANONICAL name exists, not that a historical one
+# dies: each of the four keeps its old spelling as an alias below, and ci.yml calls the
+# canonical name so the alias is for humans, not for the gate.
+
+core-verify: ## Assert vendored core/ is byte-for-byte upstream @ the recorded subtree-split (catches hand-edits + orphans the dir-level manifest misses)
 	@./test/verify-core.sh
+
+verify-core: core-verify ## (alias) the pre-#691 spelling of core-verify
 
 # The output MUST stay byte-identical to what dotfiles-core's sync-core.sh writes, because
 # that is what every other consumer reads: core-integrity.sh parses `core_tag`, and
@@ -192,18 +204,33 @@ core-lock: ## Explain why core.lock is NOT regenerated here (it is written by Co
 # skip-guards is a prerequisite here, NOT in `lint`: it drives `make` itself, and nesting a
 # recursive make inside the lint graph is both surprising and slow. It is a behavioural
 # assertion about the Makefile, so it belongs with the behavioural tests.
-test-repo: skip-guards ## Run THIS repo's behavioral tests (bootstrap.sh, zsh loader, defaults.sh)
+test: skip-guards ## Run THIS repo's behavioral tests (bootstrap.sh, zsh loader, defaults.sh)
 	@./test/test-repo.sh
 
-brew-check: ## Verify every Brewfile formula/cask is installed (the reproducibility gate; run on macOS)
+test-repo: test ## (alias) the pre-#691 spelling of test
+
+packages-check: ## Verify every Brewfile formula/cask is installed (the reproducibility gate; run on macOS)
+	@# The Brewfile IS this repo's package list, so this is the fleet's `packages-check`:
+	@# `brew bundle check --verbose` names every entry that does not resolve to something
+	@# installed, which on macOS answers both halves of the question the other repos ask of
+	@# dnf/apt/pacman/zypper/apk — a formula renamed or dropped upstream stops resolving and
+	@# shows up here the same way a missing one does.
 	@command -v brew >/dev/null 2>&1 || { echo "  brew not found — run this on macOS"; exit 1; }
 	@brew bundle check --file=Brewfile --verbose
+
+brew-check: packages-check ## (alias) the pre-#691 spelling of packages-check
 
 bootstrap: ## Install: symlinks + Homebrew + brew bundle (macOS)
 	@./bootstrap.sh
 
-bootstrap-dry: ## Preview the installer plan (symlinks); change nothing
-	@./bootstrap.sh --links-only --dry-run
+dry-run: ## Preview the FULL installer plan (brew + symlinks); change nothing
+	@./bootstrap.sh --dry-run
+
+# The old spelling previewed the SYMLINKS only (`--links-only --dry-run`). The full form
+# is a strict superset — it prints every planned action, brew included, and still mutates
+# nothing — so the alias loses no safety. `doctor` below deliberately keeps the narrow
+# links-only preview: it is a "what would change on this box" report, not an install plan.
+bootstrap-dry: dry-run ## (alias) the pre-#691 spelling of dry-run
 
 doctor: ## Show what bootstrap would change + verify the lint toolchain
 	@./bootstrap.sh --links-only --dry-run || true
@@ -213,7 +240,7 @@ sync-core: ## Reminder: how the vendored Core subtree gets updated
 	@echo "  Normally nothing to run: a dotfiles-core release opens a sync PR here"
 	@echo "  automatically (sync-fanout.yml). Merge it, then:"
 	@echo "    ./bootstrap.sh --links-only   # re-wire any new/changed Core files"
-	@echo "    make test-repo                # prove the new Core still loads (exercises the loader)"
+	@echo "    make test                     # prove the new Core still loads (exercises the loader)"
 	@echo "  Do NOT pull the subtree by hand: that moves core/ but not core.lock, and"
 	@echo "  core-integrity then reports the fresh subtree as TAMPERED. There is no local"
 	@echo "  fix for that — core.lock is written by sync-core.sh in dotfiles-core, in the"

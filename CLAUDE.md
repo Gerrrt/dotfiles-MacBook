@@ -25,7 +25,7 @@ is a reminder, not an action. After merging a sync PR:
 
 ```bash
 ./bootstrap.sh --links-only   # re-wire any new/changed Core files
-make test-repo                # prove the new Core still loads (exercises the loader)
+make test                     # prove the new Core still loads (exercises the loader)
 ```
 
 A **manual** `git subtree pull` is not supported: it moves `core/` but not `core.lock`,

@@ -189,7 +189,7 @@ jobs:
         run: make trap-guard
 
       - name: repo behavioral tests (bootstrap, loader, defaults)
-        run: make test-repo
+        run: make test
 
       # The macOS desktop layer is JSON/TOML and nothing parsed it — a malformed
       # karabiner.json or aerospace.toml shipped green and only failed on the next fresh
@@ -234,7 +234,7 @@ jobs:
         with:
           fetch-depth: 0 # need the subtree commit history for the split marker
       - name: Verify vendored core/ == upstream @ subtree-split
-        run: make verify-core
+        run: make core-verify
 
       # The third Core reference. verify-core proves the SUBTREE matches core.lock; this
       # proves the reusable workflows this repo CALLS point at that same commit. Kept a
@@ -419,7 +419,7 @@ jobs:
       - name: repo behavioral tests (on real macOS)
         env:
           REPO_TESTS_GATE_PROVISION: 1
-        run: make test-repo
+        run: make test
 
   # ── the single required status check ─────────────────────────────────────────
   # Branch rulesets should require THIS job and nothing else from this workflow.

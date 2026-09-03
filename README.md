@@ -263,12 +263,12 @@ This is an **OS-native layer**, so the contribution rule is a boundary rule:
 | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | shellcheck · shfmt · `bash -n`         | repo-owned bash                                                                                                                                            |
 | `zsh -n`                               | the zsh entry files (no `.sh` extension, so the bash globs miss them)                                                                                      |
-| `make test-repo`                       | bootstrap (incl. provision), the zsh loader, `defaults.sh` — ~150 assertions                                                                               |
+| `make test`                            | bootstrap (incl. provision), the zsh loader, `defaults.sh` — ~150 assertions                                                                               |
 | file hygiene (CI)                      | `.pre-commit-config.yaml`'s upstream hooks over the whole tree — whitespace, EOF newlines, line endings, merge markers, shebang ↔ exec bit, yaml/json/toml |
 | `make config-check`                    | every repo-owned `.json` / `.jsonc` / `.toml` parses                                                                                                       |
 | `make markdownlint`                    | repo-owned markdown, against `.markdownlint.jsonc`                                                                                                         |
 | `make secrets`                         | gitleaks over the repo-owned tree                                                                                                                          |
-| `make verify-core`                     | the vendored Core subtree hasn't drifted — diffed byte-for-byte against the vendored subset of upstream at the recorded commit (CI sets `VERIFY_CORE_STRICT=1` so "couldn't reach upstream" fails instead of skipping) |
+| `make core-verify`                     | the vendored Core subtree hasn't drifted — diffed byte-for-byte against the vendored subset of upstream at the recorded commit (CI sets `VERIFY_CORE_STRICT=1` so "couldn't reach upstream" fails instead of skipping) |
 | `actionlint`                           | the workflows themselves                                                                                                                                   |
 | macOS smoke (CI)                       | the entry points on real Darwin — clipboard, Brewfile, bootstrap                                                                                           |
 
