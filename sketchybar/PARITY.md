@@ -1,9 +1,14 @@
+<!-- desktop-parity:gen -->
 <!-- ============================================================================
-     KEEP IN SYNC: an identical copy of this file lives in BOTH repos —
-     dotfiles-MacBook/sketchybar/PARITY.md and dotfiles-Windows/desktop/PARITY.md. Edit both together — it is the single
-     shared contract that keeps the Zebar (Windows) and sketchybar (macOS) bars
-     looking and behaving the same. When you change one bar, update this spec and
-     mirror it to the other repo.
+     GENERATED BLOCK — do not edit this text in dotfiles-Windows or dotfiles-MacBook.
+     Canonical source : dotfiles-core/desktop/PARITY.shared.md
+     Regenerate       : make gen-desktop-parity   (from a dotfiles-core checkout)
+     Gate             : scripts/gen-desktop-parity.sh --check — run weekly by Core's
+                        parity-check workflow, which clones BOTH desktop repos.
+
+     Editing one copy by hand is the exact failure this block exists to prevent: the
+     two files sat 3.5 KB apart because "edit both together" was the only mechanism
+     (#693). Fix the canonical source and regenerate instead.
      ============================================================================ -->
 
 # Bar parity contract — Zebar ↔ sketchybar
@@ -11,8 +16,25 @@
 Two bars, two hosts, one design: **Zebar** on the Windows/GlazeWM host
 (`dotfiles-Windows/desktop/zebar/vanilla-clear/`, buildless React/HTML/CSS) and
 **sketchybar** on the macOS/AeroSpace host (`dotfiles-MacBook/sketchybar/`, bash +
-`sketchybar` CLI). Different tech, deliberately identical result. This file is the
-canonical spec; both implementations follow it.
+`sketchybar` CLI). Different tech, deliberately identical result. This block is the
+canonical spec — authored once in `dotfiles-core/desktop/PARITY.shared.md` and rendered
+into both repos, so neither copy can drift from the other; both bars follow it.
+
+## Divergence status
+
+Every difference between the two bars is one of three things — the same vocabulary
+Core's own `PARITY.md` uses for zsh ↔ pwsh:
+
+- **`aligned`** — same result on both bars. Changing one side without the other is a
+  regression; this document is what "the same" means.
+- **`deliberate`** — intentionally different because the hosts differ (a widget has no
+  counterpart on the other WM). Documented so it is a _decision_, not drift.
+- **`gap`** — something one bar has and the other could, but doesn't yet. An open item,
+  not a promise.
+
+Everything below is `aligned` unless it says otherwise. Anything a single host adds on
+top lives **outside this generated block**, under a "Host-specific addenda" heading in
+that repo's own copy.
 
 ## Layout (three islands, left → center → right)
 
@@ -21,19 +43,19 @@ each zone carries its own translucent rounded panel with a colored rim (see Geom
 
 | Island (rim)             | Modules (in order)                                                                                                           |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| **Left** (blue rim)      | `logo` · `workspaces` · *(binding-mode — Windows only)* · `front_app` · `pomodoro` · *(caffeinate — macOS only)* · `weather` |
+| **Left** (blue rim)      | `logo` · `workspaces` · _(binding-mode — Windows only)_ · `front_app` · `pomodoro` · _(caffeinate — macOS only)_ · `weather` |
 | **Center** (magenta rim) | `clock`                                                                                                                      |
 | **Right** (green rim)    | `network` · `volume` · `│` · `disk` · `memory` · `cpu` · `│` · `battery` · `power`                                           |
 
 The right island carries two thin grey `│` separators that chunk it into
 **I/O · load · power/ambient** — one after `volume`, one after `cpu`.
 
-Two sanctioned platform exceptions (no cross-platform equivalent):
+Two sanctioned platform exceptions, both `deliberate` (no cross-platform equivalent):
 
-- **binding-mode** — GlazeWM binding modes (e.g. `resize`); shown after
-  `workspaces` only while a mode is active. AeroSpace has no equivalent.
-- **caffeinate / keep-awake** — macOS `caffeinate -di` toggle, in the **left island**
-  beside `pomodoro`. No matching one-shot toggle on the Windows host.
+- **binding-mode** — `deliberate`, Windows only. GlazeWM binding modes (e.g. `resize`);
+  shown after `workspaces` only while a mode is active. AeroSpace has no equivalent.
+- **caffeinate / keep-awake** — `deliberate`, macOS only. The `caffeinate -di` toggle, in
+  the **left island** beside `pomodoro`. No matching one-shot toggle on the Windows host.
 
 `weather` lives in the **left island** on both hosts (a stable-width, non-urgent
 readout kept clear of the volatile right-island network figures and the centered clock).
@@ -55,7 +77,7 @@ readout kept clear of the volatile right-island network figures and the centered
 
 Within each island, items stay **chip-less** — plain spaced icon+text on the island's
 translucent fill (no per-item background). The three islands are the only rounded
-containers; the focused-`workspace` highlight pill draws *over* the left island. The
+containers; the focused-`workspace` highlight pill draws _over_ the left island. The
 colored rims are JankyBorders-style and echo the accent (`#7aa2f7`) window borders the
 tiling WM draws.
 
@@ -63,7 +85,7 @@ Sizes/spacing are **per-host tuning knobs**, kept in one place on each side so
 they're easy to iterate: sketchybar's `--bar` / `--default` / `ISLAND_ARGS` blocks in
 `sketchybarrc`, and Zebar's `:root` "tuning knobs" block at the top of `styles.css`
 (`--bar-font-size` / `--bar-height` / `--bar-gap` / `--bar-radius` / `--island-height` /
-`--island-pad-x` / `--item-gap`). They're tuned to *look* the same, not pixel-identical.
+`--island-pad-x` / `--item-gap`). They're tuned to _look_ the same, not pixel-identical.
 
 - **sketchybar**: transparent bar `--bar color=0x00000000 blur_radius=0 height=36 y_offset=4 margin=8 corner_radius=9 padding=2`; each island is a `bracket` with `background.color=0xee1d202f corner_radius=9 background.height=28 border_width=2` + its rim color.
 - **Zebar**: the `.app` grid is transparent; `.left` / `.center` / `.right` each paint an island (`background: rgba(29,32,47,0.93); border: 2px solid <rim>; border-radius: 9px`), sized by the `:root` knobs. Keep the `zpack.json` window `height` ≥ `--bar-height + 2×--bar-gap` or the islands clip; GlazeWM's `gaps.outer.top` clears them.
@@ -138,3 +160,5 @@ Nerd Fonts webfont. Same icon on both.
 - **power** — collapsed icon expands to lock · sleep · restart · shutdown.
 - **clock + battery** also appear here even though the macOS tmux status bar shows
   them too — a deliberate choice for cross-host parity.
+
+<!-- desktop-parity:end -->
