@@ -13,7 +13,7 @@ model (Core → OS-native → Role). Its own lineage — built directly on **Hom
 
 ## The rule that bites
 
-`core/` is a **vendored `git subtree` copy of [dotfiles-core](https://github.com/dotgibson/dotfiles-core)** — it
+`core/` is a **vendored copy of [dotfiles-core](https://github.com/dotgibson/dotfiles-core)** — it
 is *not* editable here. Anything you change under `core/` is overwritten on the
 next sync, and a local pre-commit guard plus the `core-integrity` CI job both
 reject a hand-edit before it can land.
@@ -28,11 +28,14 @@ is a reminder, not an action. After merging a sync PR:
 make test-repo                # prove the new Core still loads (exercises the loader)
 ```
 
-A **manual** `git subtree pull` is not supported: it moves `core/` but not `core.lock`,
-and `core-integrity` then reports the fresh subtree as tampered. There is no local fix —
-`core.lock` is written by `sync-core.sh` in `dotfiles-core`, in the same commit as the
-pull. Re-run the fan-out (`make sync` in a Core checkout) instead
-(dotgibson/dotfiles-core#593).
+`git subtree` is **not the mechanism** and has not been since
+dotgibson/dotfiles-core#587: the fan-out does a pinned fetch plus
+`git read-tree --prefix=core/`, with `core.lock` recording the commit. A **manual**
+`git subtree pull` is therefore worse than unsupported — it moves `core/` but not
+`core.lock`, and `core-integrity` then reports the fresh tree as tampered. There is no
+local fix: `core.lock` is written by `sync-core.sh` in `dotfiles-core`, in the same commit
+as the vendor. Re-run the fan-out (`make sync` in a Core checkout) instead
+(dotgibson/dotfiles-core#593). `core/VENDORING.md` has the mechanism.
 
 What belongs **here** is only the OS-native layer: the `Brewfile`, OS overlays, desktop tooling, and the bootstrap.
 
