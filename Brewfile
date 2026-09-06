@@ -54,6 +54,15 @@ brew "duf"           # df   (core-doctor probes this; disk usage/free)
 brew "btop"          # top  (core aliases top/htop → btop expect this binary)
 brew "procs"         # ps
 brew "viddy"         # watch (core aliases watch → viddy; 00-tools.zsh probes HAVE_VIDDY)
+# NOTE: watchexec is deliberately ABSENT — the third corner of the re-run triangle
+# (viddy re-runs on a TIMER, hyperfine re-runs a fixed COUNT and measures, watchexec
+# re-runs when FILES CHANGE). Homebrew packages it first-class, so the gap is a choice,
+# not an oversight: it is opt-in, and this box gets it via `cargo install --locked
+# watchexec-cli` if ever wanted. Recorded upstream in dotfiles-core's PORTING-MATRIX.md
+# footnote 25 — noted HERE because a reader of this file alone could not otherwise tell
+# the absence was intentional (#230). Core probes it bare into _CORE_PROBED
+# (core/zsh/00-tools.zsh — no HAVE_ flag, inert without the binary), so that probe stays
+# permanently cold on macOS by design.
 brew "sd"            # sed
 brew "ast-grep"      # AST-aware structural search/rewrite — the syntax-tree complement to rg(text)/sd(regex)/gron(JSON); own command (00-tools.zsh probes HAVE_ASTGREP)
 brew "jq"            # JSON
