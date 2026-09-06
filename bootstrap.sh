@@ -173,7 +173,7 @@ else
   printf 'bootstrap: core/lib/ux.sh is missing — the core/ subtree is incomplete.\n' >&2
   printf '  a clone always contains core/; if building fresh, take the RELEASED tag\n' >&2
   printf '  (never main, or core-integrity reports the fresh subtree as TAMPERED):\n' >&2
-  printf '    git subtree add --prefix=core <dotfiles-core-url> refs/tags/v4 --squash\n' >&2
+  printf '    git subtree add --prefix=core <dotfiles-core-url> refs/tags/v7 --squash\n' >&2
   printf '    make core-lock\n' >&2
   exit 1
 fi
@@ -596,7 +596,7 @@ brew_shellenv() {
 [[ -d "$REPO/core" ]] || {
   err "core/ subtree missing — this should be present in a clone; if building fresh, take"
   err "the RELEASED tag (never main), or core-integrity reports the subtree as TAMPERED:"
-  info "git subtree add --prefix=core <dotfiles-core-url> refs/tags/v4 --squash"
+  info "git subtree add --prefix=core <dotfiles-core-url> refs/tags/v7 --squash"
   info "make core-lock"
   exit 1
 }
