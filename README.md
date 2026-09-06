@@ -117,7 +117,7 @@ exec zsh
 ./bootstrap.sh --macos-defaults         # optional: apply system prefs
 ```
 
-`core/` is a vendored subtree and is **already present** in a clone — there is no
+`core/` is a vendored copy and is **already present** in a clone — there is no
 submodule step.
 
 | Flag               | What it does                                         |

@@ -53,7 +53,7 @@ Expect an acknowledgement within a few days.
 `zsh/`, `macos/defaults.sh`, `aerospace/`, `sketchybar/`, `karabiner/`, `ghostty/`,
 `fastfetch/`, `ssh/os.conf`, `completions/`, `test/`, and the workflows in `.github/`.
 
-**Out of scope — report upstream.** `core/` is a vendored `git subtree` copy of
+**Out of scope — report upstream.** `core/` is a vendored copy of
 [dotfiles-core](https://github.com/dotgibson/dotfiles-core) and is overwritten on the next
 sync; a fix applied here would be silently reverted. Report it against `dotfiles-core`
 instead, where it can be fixed once and fanned out to every OS repo.

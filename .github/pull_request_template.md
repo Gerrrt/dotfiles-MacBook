@@ -16,7 +16,7 @@
 
 - [ ] **No** — `core/` is untouched
 
-If you ticked anything under `core/`, stop: that tree is a vendored subtree, overwritten
+If you ticked anything under `core/`, stop: that tree is a vendored copy, overwritten
 on the next sync. Fix it upstream in `dotfiles-core` and let the release fan out a sync PR.
 The local pre-commit guard and the `core-integrity` job will both reject it anyway.
 
