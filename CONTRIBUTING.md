@@ -19,7 +19,7 @@ belongs in Core — otherwise every OS repo re-implements it and the copies drif
 
 ## Never hand-edit `core/`
 
-`core/` is a vendored `git subtree` copy of
+`core/` is a vendored copy of
 [dotfiles-core](https://github.com/dotgibson/dotfiles-core). Anything you change there is
 **overwritten on the next sync**, and two guards will stop you first: a local pre-commit
 hook (installed by `./bootstrap.sh`) and the `core-integrity` CI job, which compares the
